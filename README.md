@@ -40,7 +40,7 @@
 ### Подписки на озвучки
 
 <p align="center">
-  <img src="docs/screenshots/subscriptions.webp" alt="Страница подписок TranslationSub" width="100%">
+  <img src="docs/screenshots/subscriptions.png" alt="Страница подписок TranslationSub" width="100%">
 </p>
 
 Карточка показывает выбранную озвучку, сезон, просмотренную и доступную серию, прогресс, данные TMDB и состояние умного расписания.
@@ -48,7 +48,7 @@
 ### Уведомления
 
 <p align="center">
-  <img src="docs/screenshots/notifications.webp" alt="Уведомления о новых сериях" width="100%">
+  <img src="docs/screenshots/notifications.png" alt="Уведомления о новых сериях" width="100%">
 </p>
 
 Новые серии собираются в отдельном окне уведомлений; из него можно перейти к подпискам или открыть нужный сериал.
@@ -58,11 +58,11 @@
 <table>
   <tr>
     <td width="50%" align="center">
-      <img src="docs/screenshots/settings.webp" alt="Настройки TranslationSub">
+      <img src="docs/screenshots/settings.png" alt="Настройки TranslationSub">
       <br><sub>Интервалы, TMDB и расписание</sub>
     </td>
     <td width="50%" align="center">
-      <img src="docs/screenshots/balancers.webp" alt="Выбор балансеров TranslationSub">
+      <img src="docs/screenshots/balancers.png" alt="Выбор балансеров TranslationSub">
       <br><sub>Балансеры Lampac для опроса</sub>
     </td>
   </tr>
