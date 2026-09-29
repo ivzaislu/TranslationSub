@@ -6,12 +6,12 @@
 
 Следит не просто за выходом новой серии, а за тем, появилась ли она **именно в выбранной озвучке**.
 
-[![Lampac](https://img.shields.io/badge/Lampac-NextGen-blueviolet?style=flat-square)](https://github.com/ivzaislu/lampac-nextgen)
+[![Lampac](https://img.shields.io/badge/Lampac-NextGen-blueviolet?style=flat-square)](https://github.com/lampac-nextgen/lampac)
 ![Lampa](https://img.shields.io/badge/UI-Lampa-F5A623?style=flat-square)
 ![Dynamic module](https://img.shields.io/badge/module-dynamic-2ea44f?style=flat-square)
 [![TMDB](https://img.shields.io/badge/TMDB-schedule-01B4E4?style=flat-square&logo=themoviedatabase&logoColor=white)](https://www.themoviedb.org/)
 [![SQLite](https://img.shields.io/badge/storage-SQLite-003B57?style=flat-square&logo=sqlite&logoColor=white)](https://www.sqlite.org/)
-![Realtime](https://img.shields.io/badge/realtime-NWS-E67E22?style=flat-square)
+![Realtime](https://img.shields.io/badge/realtime-NWS-E67E22?style=flat-square)\n[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
 [Быстрый старт](#quick-start) •
 [Возможности](#features) •
@@ -313,19 +313,25 @@ TranslationSub/
 
 ## 🧩 Зависимости
 
-- **Lampac** с поддержкой dynamic modules и Online-балансеров;
+- **[Lampac](https://github.com/lampac-nextgen/lampac)** с поддержкой dynamic modules и Online-балансеров;
 - **Lampa** — пользовательский интерфейс;
 - **TMDB** — расписание и сведения о выходе эпизодов;
 - **Lampac TimeCode** — источник просмотренного прогресса;
 - **Lampac NWS** — realtime-обновления;
 - **SQLite** — локальное состояние TranslationSub.
 
+## 📄 Лицензия
+
+Проект распространяется по лицензии **MIT**. См. файл [`LICENSE`](LICENSE).
+
 ---
 
 <div align="center">
 
-Репозиторий подготовлен как самостоятельная версия модуля
+TranslationSub предназначен для **[Lampac NextGen](https://github.com/lampac-nextgen/lampac)**.
+
+Самостоятельный репозиторий подготовлен из модуля
 [`Modules/TranslationSub`](https://github.com/ivzaislu/lampac-nextgen/tree/TranslationSub-release/Modules/TranslationSub)
-из ветки [`TranslationSub-release`](https://github.com/ivzaislu/lampac-nextgen/tree/TranslationSub-release).
+ветки `TranslationSub-release`.
 
 </div>
