@@ -328,10 +328,6 @@ TranslationSub/
 
 <div align="center">
 
-TranslationSub предназначен для **[Lampac NextGen](https://github.com/lampac-nextgen/lampac)**.
-
-Самостоятельный репозиторий подготовлен из модуля
-[`Modules/TranslationSub`](https://github.com/ivzaislu/lampac-nextgen/tree/TranslationSub-release/Modules/TranslationSub)
-ветки `TranslationSub-release`.
+TranslationSub — самостоятельный модуль для **[Lampac NextGen](https://github.com/lampac-nextgen/lampac)**.
 
 </div>
