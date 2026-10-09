@@ -1,11 +1,11 @@
 using Microsoft.Data.Sqlite;
 using Newtonsoft.Json.Linq;
+using Shared.Services;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
-using System.Text.RegularExpressions;
 using TranslationSub.Models;
 
 namespace TranslationSub.Services;
@@ -16,17 +16,60 @@ namespace TranslationSub.Services;
 ///
 /// Lampac TimeCode is the authoritative source for watched progress. Shared
 /// TranslationSubscription objects must never be mutated with profile state.
+///
+/// Current Lampac main stores TimeCode in typed columns (percent/identity/deleted)
+/// and composes profile data areas as uid:profile. A legacy reader is retained so
+/// an existing database is still readable before TimeCode performs its migration.
 /// </summary>
 public static class TimeCodeProgressService
 {
-    const int WatchedPercent = 60;
+    const double WatchedPercent = 60;
     const int MaxEpisodeScan = 400;
     const string DatabasePath = "database/TimeCode.sql";
 
     sealed class TimeCodeRow
     {
         public string Card { get; init; }
-        public int Percent { get; init; }
+        public string Identity { get; init; }
+        public double Percent { get; init; }
+    }
+
+    sealed class TimeCodeRows
+    {
+        public Dictionary<string, List<TimeCodeRow>> ByHash { get; } =
+            new(StringComparer.Ordinal);
+
+        public Dictionary<string, List<TimeCodeRow>> ByIdentity { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        public int Count { get; set; }
+
+        public void Add(string item, TimeCodeRow row)
+        {
+            Count++;
+
+            if (!string.IsNullOrWhiteSpace(item))
+            {
+                if (!ByHash.TryGetValue(item, out var hashRows))
+                {
+                    hashRows = new List<TimeCodeRow>();
+                    ByHash[item] = hashRows;
+                }
+
+                hashRows.Add(row);
+            }
+
+            if (!string.IsNullOrWhiteSpace(row.Identity))
+            {
+                if (!ByIdentity.TryGetValue(row.Identity, out var identityRows))
+                {
+                    identityRows = new List<TimeCodeRow>();
+                    ByIdentity[row.Identity] = identityRows;
+                }
+
+                identityRows.Add(row);
+            }
+        }
     }
 
     public static int SyncUser(string uid, string profileId = null)
@@ -44,10 +87,23 @@ public static class TimeCodeProgressService
                 .Where(x => x.IsSerial && string.Equals(x.Uid, uid, StringComparison.Ordinal))
                 .ToList();
 
+            // main uses DataArea.Compose(uid, profile) => uid:profile.
+            // If TimeCode has not migrated an older database yet, fall back once
+            // to the previous uid_profile data-area name.
+            var rows = LoadRows(timeCodeUser);
+            if (rows.Count == 0)
+            {
+                string legacyUser = BuildLegacyTimeCodeUserId(uid, profileId);
+                if (!string.IsNullOrWhiteSpace(legacyUser)
+                    && !string.Equals(legacyUser, timeCodeUser, StringComparison.Ordinal))
+                {
+                    rows = LoadRows(legacyUser);
+                }
+            }
+
             // Reconciliation is allowed only after TimeCode was opened and read
             // successfully. An empty result is authoritative: this user/profile
             // currently has no persisted watched progress.
-            var rows = LoadRows(timeCodeUser);
             var fallbackOwners = BuildFallbackOwners(subscriptions, rows);
 
             var watchedBySubscription = new Dictionary<string, int>(StringComparer.Ordinal);
@@ -89,21 +145,29 @@ public static class TimeCodeProgressService
 
     public static string BuildTimeCodeUserId(string uid, string profileId = null)
     {
-        string value = (uid ?? string.Empty).Trim();
-        if (string.IsNullOrWhiteSpace(value))
+        uid = (uid ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(uid))
             return string.Empty;
 
         profileId = ProfileProgressStore.NormalizeProfileId(profileId);
-        if (profileId != "0")
-            value += "_" + profileId;
 
-        // Keep this identical to Modules/Sync/TimeCode/Controller.cs#getUserid.
-        return Regex.Replace(value, "[^a-z0-9\\-_\\.]+", string.Empty, RegexOptions.IgnoreCase);
+        // Keep this identical to current Modules/Sync/TimeCode/Controller.cs#getUserid.
+        return DataArea.Compose(uid, profileId == "0" ? null : profileId);
     }
 
-    static Dictionary<string, List<TimeCodeRow>> LoadRows(string user)
+    static string BuildLegacyTimeCodeUserId(string uid, string profileId)
     {
-        var result = new Dictionary<string, List<TimeCodeRow>>(StringComparer.Ordinal);
+        uid = (uid ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(uid))
+            return string.Empty;
+
+        profileId = ProfileProgressStore.NormalizeProfileId(profileId);
+        return DataArea.Legacy(uid, profileId == "0" ? null : profileId);
+    }
+
+    static TimeCodeRows LoadRows(string user)
+    {
+        var result = new TimeCodeRows();
 
         var connectionString = new SqliteConnectionStringBuilder
         {
@@ -116,29 +180,38 @@ public static class TimeCodeProgressService
         using var connection = new SqliteConnection(connectionString);
         connection.Open();
 
+        var columns = TableColumns(connection);
+        bool typedSchema = columns.Contains("percent");
+
         using var command = connection.CreateCommand();
-        command.CommandText = "SELECT card, item, data FROM timecodes WHERE user = $user";
+        command.CommandText = typedSchema
+            ? "SELECT card, item, identity, percent, deleted FROM timecodes WHERE user = $user"
+            : "SELECT card, item, NULL AS identity, data, 0 AS deleted FROM timecodes WHERE user = $user";
         command.Parameters.AddWithValue("$user", user);
 
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            string item = reader.IsDBNull(1) ? null : reader.GetString(1);
-            if (string.IsNullOrWhiteSpace(item))
+            bool deleted = !reader.IsDBNull(4) && Convert.ToInt64(reader.GetValue(4), CultureInfo.InvariantCulture) != 0;
+            if (deleted)
                 continue;
 
-            string data = reader.IsDBNull(2) ? null : reader.GetString(2);
-            int percent = ReadPercent(data);
+            string item = reader.IsDBNull(1) ? null : reader.GetString(1);
+            string identity = reader.IsDBNull(2) ? null : reader.GetString(2);
 
-            if (!result.TryGetValue(item, out var list))
-            {
-                list = new List<TimeCodeRow>();
-                result[item] = list;
-            }
+            // New native TimeCode rows can be identity-only and legitimately have
+            // no legacy Lampa hash, so retain a row when either key is present.
+            if (string.IsNullOrWhiteSpace(item) && string.IsNullOrWhiteSpace(identity))
+                continue;
 
-            list.Add(new TimeCodeRow
+            double percent = typedSchema
+                ? ReadTypedPercent(reader.IsDBNull(3) ? null : reader.GetValue(3))
+                : ReadLegacyPercent(reader.IsDBNull(3) ? null : reader.GetString(3));
+
+            result.Add(item, new TimeCodeRow
             {
                 Card = reader.IsDBNull(0) ? string.Empty : reader.GetString(0),
+                Identity = identity,
                 Percent = percent
             });
         }
@@ -146,7 +219,40 @@ public static class TimeCodeProgressService
         return result;
     }
 
-    static int ReadPercent(string data)
+    static HashSet<string> TableColumns(SqliteConnection connection)
+    {
+        var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(timecodes);";
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (!reader.IsDBNull(1))
+                result.Add(reader.GetString(1));
+        }
+
+        return result;
+    }
+
+    static double ReadTypedPercent(object value)
+    {
+        if (value == null || value == DBNull.Value)
+            return 0;
+
+        try
+        {
+            double percent = Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            return Math.Max(0, Math.Min(100, percent));
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    static double ReadLegacyPercent(string data)
     {
         if (string.IsNullOrWhiteSpace(data))
             return 0;
@@ -154,7 +260,7 @@ public static class TimeCodeProgressService
         try
         {
             var value = JObject.Parse(data);
-            return Math.Max(0, Math.Min(100, value.Value<int?>("percent") ?? 0));
+            return Math.Max(0, Math.Min(100, value.Value<double?>("percent") ?? 0));
         }
         catch
         {
@@ -164,10 +270,10 @@ public static class TimeCodeProgressService
 
     static Dictionary<string, HashSet<string>> BuildFallbackOwners(
         IReadOnlyCollection<TranslationSubscription> subscriptions,
-        IReadOnlyDictionary<string, List<TimeCodeRow>> rows)
+        TimeCodeRows rows)
     {
         var result = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        if (subscriptions == null || subscriptions.Count == 0 || rows == null || rows.Count == 0)
+        if (subscriptions == null || subscriptions.Count == 0 || rows == null || rows.ByHash.Count == 0)
             return result;
 
         foreach (var sub in subscriptions)
@@ -186,7 +292,7 @@ public static class TimeCodeProgressService
                 for (int episode = 1; episode <= MaxEpisodeScan; episode++)
                 {
                     string hash = LampaHash(BuildEpisodeHashInput(season, episode, title));
-                    if (!rows.ContainsKey(hash))
+                    if (!rows.ByHash.ContainsKey(hash))
                         continue;
 
                     if (!result.TryGetValue(hash, out var owners))
@@ -206,13 +312,10 @@ public static class TimeCodeProgressService
     static int FindWatchedEpisode(
         TranslationSubscription sub,
         int season,
-        Dictionary<string, List<TimeCodeRow>> rows,
+        TimeCodeRows rows,
         IReadOnlyDictionary<string, HashSet<string>> fallbackOwners)
     {
         var titles = TitleCandidates(sub);
-        if (titles.Count == 0)
-            return -1;
-
         var cards = CardCandidates(sub);
         string contentIdentity = ContentIdentityKey(sub);
         int scanTo = EpisodeScanLimit(sub);
@@ -224,28 +327,41 @@ public static class TimeCodeProgressService
         {
             bool episodeWatched = false;
 
-            foreach (string title in titles)
+            // Current TimeCode main resolves web hashes to canonical TMDB identities
+            // and native clients can write identity-only rows. Prefer that exact key.
+            string identity = BuildEpisodeIdentity(sub, season, episode);
+            if (!string.IsNullOrWhiteSpace(identity)
+                && rows.ByIdentity.TryGetValue(identity, out var identityRows))
             {
-                string hash = LampaHash(BuildEpisodeHashInput(season, episode, title));
-                if (!rows.TryGetValue(hash, out var matchingRows))
-                    continue;
-
                 foundAnyTimelineRow = true;
+                episodeWatched = identityRows.Any(x => x.Percent >= WatchedPercent);
+            }
 
-                bool exactWatched = matchingRows.Any(x =>
-                    x.Percent >= WatchedPercent && cards.Contains(x.Card));
-
-                // TimeCode card ids can change when the same show is opened from a
-                // different Lampa source. Keep the source-independent hash fallback,
-                // but only if this hash maps to one logical subscribed work. This
-                // prevents equal titles from leaking watched progress into each other.
-                bool hashWatched = IsUnambiguousFallback(hash, contentIdentity, fallbackOwners)
-                    && matchingRows.Any(x => x.Percent >= WatchedPercent);
-
-                if (exactWatched || hashWatched)
+            if (!episodeWatched)
+            {
+                foreach (string title in titles)
                 {
-                    episodeWatched = true;
-                    break;
+                    string hash = LampaHash(BuildEpisodeHashInput(season, episode, title));
+                    if (!rows.ByHash.TryGetValue(hash, out var matchingRows))
+                        continue;
+
+                    foundAnyTimelineRow = true;
+
+                    bool exactWatched = matchingRows.Any(x =>
+                        x.Percent >= WatchedPercent && cards.Contains(x.Card));
+
+                    // TimeCode card ids can change when the same show is opened from a
+                    // different Lampa source. Keep the source-independent hash fallback,
+                    // but only if this hash maps to one logical subscribed work. This
+                    // prevents equal titles from leaking watched progress into each other.
+                    bool hashWatched = IsUnambiguousFallback(hash, contentIdentity, fallbackOwners)
+                        && matchingRows.Any(x => x.Percent >= WatchedPercent);
+
+                    if (exactWatched || hashWatched)
+                    {
+                        episodeWatched = true;
+                        break;
+                    }
                 }
             }
 
@@ -254,6 +370,17 @@ public static class TimeCodeProgressService
         }
 
         return foundAnyTimelineRow ? watched : -1;
+    }
+
+    static string BuildEpisodeIdentity(TranslationSubscription sub, int season, int episode)
+    {
+        string tmdb = (sub?.TmdbId ?? string.Empty).Trim();
+        if (!long.TryParse(tmdb, NumberStyles.None, CultureInfo.InvariantCulture, out long tmdbId) || tmdbId <= 0)
+            return null;
+
+        return "tv-" + tmdbId.ToString(CultureInfo.InvariantCulture)
+            + "-s" + season.ToString(CultureInfo.InvariantCulture)
+            + "e" + episode.ToString(CultureInfo.InvariantCulture);
     }
 
     static bool IsUnambiguousFallback(

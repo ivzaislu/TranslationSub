@@ -81,8 +81,15 @@ public class ModInit : IModuleLoaded
 
         var context = e.httpContext;
         var request = context.Request;
-        if (!HttpMethods.IsPost(request.Method)
-            || !string.Equals(request.Path.Value, "/timecode/add", StringComparison.OrdinalIgnoreCase))
+        if (!HttpMethods.IsPost(request.Method))
+            return true;
+
+        string path = request.Path.Value;
+        bool timeCodeMutation =
+            string.Equals(path, "/timecode/add", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(path, "/timecode/set", StringComparison.OrdinalIgnoreCase);
+
+        if (!timeCodeMutation)
             return true;
 
         var requestInfo = context.Features.Get<RequestModel>();

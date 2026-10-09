@@ -153,7 +153,6 @@ CREATE INDEX IF NOT EXISTS idx_translationsub_profile_progress_subscription
 
             initialized = true;
             RestrictDatabasePermissions();
-            RemoveLegacyJsonFiles();
         }
     }
 
@@ -180,41 +179,6 @@ PRAGMA synchronous = NORMAL;
         catch
         {
             // Filesystem may not expose Unix permissions (for example some mounted volumes).
-        }
-    }
-
-    static void RemoveLegacyJsonFiles()
-    {
-        string legacyDirectory = "database/translationsub";
-        string[] legacyFiles =
-        {
-            Path.Combine(legacyDirectory, "settings.json"),
-            Path.Combine(legacyDirectory, "subscriptions.json"),
-            Path.Combine(legacyDirectory, "profile-progress.json")
-        };
-
-        foreach (string file in legacyFiles)
-        {
-            try
-            {
-                if (File.Exists(file))
-                    File.Delete(file);
-            }
-            catch
-            {
-                // Legacy development data is not part of the current storage contract.
-            }
-        }
-
-        try
-        {
-            if (Directory.Exists(legacyDirectory)
-                && Directory.GetFileSystemEntries(legacyDirectory).Length == 0)
-                Directory.Delete(legacyDirectory);
-        }
-        catch
-        {
-            // Leave a non-empty or locked legacy directory untouched.
         }
     }
 }
