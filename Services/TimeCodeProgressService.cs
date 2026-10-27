@@ -173,8 +173,12 @@ public static class TimeCodeProgressService
         {
             DataSource = DatabasePath,
             Mode = SqliteOpenMode.ReadOnly,
-            Cache = SqliteCacheMode.Shared,
-            DefaultTimeout = 2
+            // The TimeCode writer also opens this WAL database. Never share
+            // SQLite cache state with the writable Lampac connection.
+            Cache = SqliteCacheMode.Private,
+            DefaultTimeout = 2,
+            // Do not retain a read-only connection in the pool after the read.
+            Pooling = false
         }.ToString();
 
         using var connection = new SqliteConnection(connectionString);
