@@ -62,6 +62,118 @@
         });
     }
 
+    // Lampac's Online plugin accepts an explicit balancer through
+    // lampac_custom_select and remembers season/voice in online_choice_<id>.
+    // Season is an index there, not a season number: this is a best-effort
+    // integration for standard season lists; the user can correct it in Online.
+    function latestEpisodeSources(item) {
+        var episode = Number(item && (item.toEpisode || item.availableEpisode)) || 0;
+        if (episode <= 0) return [];
+
+        var seen = {};
+        return (Array.isArray(item && item.sources) ? item.sources : []).filter(function (row) {
+            if (!row || Number(row.latestEpisode) < episode) return false;
+            var id = String(row.source || '').toLowerCase().trim();
+            if (!/^[a-z0-9][a-z0-9._-]{0,119}$/.test(id) || seen[id]) return false;
+            seen[id] = true;
+            return true;
+        });
+    }
+
+    function openOnBalancer(item, entry) {
+        if (!window.lampac_plugin || !window.Lampa || !Lampa.Activity
+            || typeof Lampa.Activity.push !== 'function'
+            || !Lampa.Storage || typeof Lampa.Storage.cache !== 'function'
+            || typeof Lampa.Storage.set !== 'function') return false;
+
+        var navigation = item && item.navigation && typeof item.navigation === 'object' ? item.navigation : {};
+        var tmdbId = String(navigation.id || item.tmdbId || '').trim();
+        var season = Math.floor(Number(item && item.season));
+        var voice = String(entry && (entry.translationName || item.translationName) || '').trim();
+        var balancer = String(entry && entry.source || '').toLowerCase().trim();
+        if (!/^\\d+$/.test(tmdbId) || !Number.isSafeInteger(Number(tmdbId))
+            || !Number.isInteger(season) || season < 1 || !voice || !balancer)
+            return false;
+
+        var id = Number(tmdbId);
+        var title = String(item.title || item.originalTitle || '').trim();
+        var original = String(item.originalTitle || title).trim();
+        var movie = {
+            id: id,
+            tmdb_id: id,
+            source: 'tmdb',
+            name: title,
+            title: title,
+            original_name: original,
+            original_title: original,
+            number_of_seasons: season,
+            poster_path: item.poster || '',
+            imdb_id: item.imdbId || '',
+            kinopoisk_id: item.kpId || '',
+            first_air_date: item.year ? (String(item.year) + '-01-01') : ''
+        };
+
+        try {
+            var key = 'online_choice_' + balancer;
+            var choices = Lampa.Storage.cache(key, 3000, {}) || {};
+            var previous = choices[id] && typeof choices[id] === 'object' ? choices[id] : {};
+            choices[id] = Object.assign({}, previous, {
+                season: Math.max(0, season - 1),
+                voice: 0,
+                voice_name: voice,
+                voice_id: entry.translationId || item.translationId || 0,
+                voice_url: ''
+            });
+            Lampa.Storage.set(key, choices);
+
+            Lampa.Activity.push({
+                url: '',
+                title: 'Онлайн · ' + title,
+                component: 'lampac',
+                movie: movie,
+                search: title,
+                search_one: title,
+                search_two: original,
+                page: 1,
+                clarification: false,
+                lampac_custom_select: balancer
+            });
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function openNoticeOnline(item) {
+        var candidates = latestEpisodeSources(item);
+        if (!candidates.length || !window.lampac_plugin) return false;
+
+        if (candidates.length === 1) return openOnBalancer(item, candidates[0]);
+        if (!window.Lampa || !Lampa.Select || typeof Lampa.Select.show !== 'function')
+            return false;
+
+        try {
+            Lampa.Select.show({
+                title: 'Балансер для просмотра',
+                items: candidates.map(function (entry) {
+                    var id = String(entry.source || '');
+                    return {
+                        title: id.charAt(0).toUpperCase() + id.slice(1),
+                        subtitle: 'S' + item.season + ' · ' + String(entry.translationName || item.translationName || ''),
+                        sourceEntry: entry
+                    };
+                }),
+                onSelect: function (chosen) {
+                    try { if (Lampa.Select.close) Lampa.Select.close(); } catch (e) {}
+                    if (!openOnBalancer(item, chosen.sourceEntry)) openCard(item);
+                }
+            });
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
     function refreshState(result) {
         try {
             var badge = window.TranslationSubBadgeState;
@@ -177,6 +289,7 @@
     function start() {
         window.TranslationSubCardSource = {
             open: openCard,
+            openNoticeOnline: openNoticeOnline,
             bindPage: bindPage
         };
     }
