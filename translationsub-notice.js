@@ -36,27 +36,44 @@
     }
 
     function openUpdate(item, previousController, directEnabled) {
-        closeAndRestore(previousController);
-        setTimeout(function () {
-            try {
-                if (window.TranslationSubCardSource) {
+        var closed = false;
+
+        function closeOnce() {
+            if (closed) return;
+            closed = true;
+            closeAndRestore(previousController);
+        }
+
+        function openSeriesCard() {
+            closeOnce();
+            setTimeout(function () {
+                try {
                     var source = window.TranslationSubCardSource;
-                    if (directEnabled && typeof source.openNoticeOnline === 'function') {
-                        try {
-                            if (source.openNoticeOnline(item)) return;
-                        } catch (e2) {
-                            // An experimental navigation failure must not
-                            // break the normal series-card route.
-                        }
-                    }
-                    if (typeof source.open === 'function') {
+                    if (source && typeof source.open === 'function') {
                         source.open(item);
                         return;
                     }
-                }
-            } catch (e) {}
-            openSubscriptionsPage();
-        }, 0);
+                } catch (e) {}
+                openSubscriptionsPage();
+            }, 0);
+        }
+
+        // Keep the notification drawer behind the standard Lampa Select
+        // chooser. Pressing Back on the remote then returns to the *same*
+        // focused notification instead of dropping the user at the home page.
+        try {
+            var source = window.TranslationSubCardSource;
+            if (directEnabled && source && typeof source.openNoticeOnline === 'function') {
+                if (source.openNoticeOnline(item, {
+                    beforeNavigate: closeOnce,
+                    onFailure: openSeriesCard
+                })) return;
+            }
+        } catch (e) {
+            // Missing Online integration: retain the ordinary card route.
+        }
+
+        openSeriesCard();
     }
 
     function noticeCard(item, index) {
