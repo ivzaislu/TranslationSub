@@ -30,7 +30,8 @@ function makeClient() {
             get() { return ''; }
         },
         Activity: {
-            push(value) { activities.push(value); }
+            push(value) { activities.push(value); },
+            back() { activities.pop(); }
         },
         Select: {
             show(options) { selections.push(options); },
@@ -77,17 +78,27 @@ const activeOther = { ...stale, latestEpisode: 3 };
     const { client, activities, storage, selections } = makeClient();
     storage.online_choice_collaps = { 123: { episodes_view: { 1: 2 }, voice_name: 'Wrong' } };
     assert.equal(client.TranslationSubCardSource.openNoticeOnline(item([active, stale])), true);
-    assert.equal(activities.length, 1);
+    assert.equal(activities.length, 2);
     assert.equal(selections.length, 0);
-    assert.equal(activities[0].component, 'lampac');
-    assert.equal(activities[0].lampac_custom_select, 'collaps');
-    assert.equal(activities[0].movie.id, 123);
-    assert.equal(activities[0].movie.name, 'Example');
+    assert.equal(activities[0].component, 'full', 'only direct mode inserts a series card underneath Online');
+    assert.equal(activities[0].source, 'tmdb');
+    assert.equal(activities[0].id, 123);
+    assert.equal(activities[0].method, 'tv');
+    assert.equal(activities[1].component, 'lampac');
+    assert.equal(activities[1].lampac_custom_select, 'collaps');
+    assert.equal(activities[1].movie.id, 123);
+    assert.equal(activities[1].movie.name, 'Example');
+    // Lampa Explorer handles poster OK by Activity.back() when there is a
+    // previous activity. The card underneath must be the requested series.
+    client.Lampa.Activity.back();
+    assert.equal(activities.length, 1);
+    assert.equal(activities[0].component, 'full');
+    assert.equal(activities[0].id, 123);
     assert.equal(storage.online_choice_collaps[123].season, 1);
     assert.equal(storage.online_choice_collaps[123].voice_name, 'LostFilm');
     assert.equal(storage.online_choice_collaps[123].voice_url, '');
     assert.equal(storage.online_choice_collaps[123].episodes_view[1], 2);
-    console.log('PASS: one active balancer -> Lampac activity, season and voice preselected');
+    console.log('PASS: one active balancer -> Online above correct series card; poster OK returns to card');
 }
 
 {
@@ -103,8 +114,10 @@ const activeOther = { ...stale, latestEpisode: 3 };
     assert.equal(steps.length, 0, 'keep modal open while remote selector is displayed');
     assert.equal(selections[0].onBack, undefined, 'let Lampa restore the original modal and its focus');
     selections[0].onSelect(selections[0].items[1]);
-    assert.equal(activities.length, 1);
-    assert.equal(activities[0].lampac_custom_select, 'hdvb');
+    assert.equal(activities.length, 2);
+    assert.equal(activities[0].component, 'full');
+    assert.equal(activities[1].component, 'lampac');
+    assert.equal(activities[1].lampac_custom_select, 'hdvb');
     assert.deepEqual(steps, ['close modal']);
     assert.equal(selectorCloses(), 0, 'Lampa Select closes itself before onSelect');
     console.log('PASS: two balancers -> TV remote menu without duplicate close/focus loss');
@@ -202,8 +215,9 @@ function makeNoticeClient() {
     selections[0].onSelect(selections[0].items[0]);
     assert.equal(selectorCloses(), 0, 'must not manually close an already hidden selector');
     assert.equal(dom.closes, 1, 'close the modal exactly once before navigation');
-    assert.equal(activities.length, 1);
-    assert.equal(activities[0].lampac_custom_select, 'collaps');
+    assert.equal(activities.length, 2);
+    assert.equal(activities[0].component, 'full');
+    assert.equal(activities[1].lampac_custom_select, 'collaps');
     console.log('PASS: remote OK opens selection; Back leaves drawer/focus intact');
 }
 
@@ -225,9 +239,10 @@ function makeNoticeClient() {
     dom.modal.onSelect(dom.modal.select);
     assert.equal(selections.length, 0, 'single source requires no extra remote input');
     assert.equal(dom.closes, 1);
-    assert.deepEqual(events, ['modal closed', 'activity opened'],
-        'release the modal controller before Lampac takes TV remote focus');
-    assert.equal(activities[0].component, 'lampac');
+    assert.deepEqual(events, ['modal closed', 'activity opened', 'activity opened'],
+        'release the modal controller, then place the card underneath Online');
+    assert.equal(activities[0].component, 'full');
+    assert.equal(activities[1].component, 'lampac');
     console.log('PASS: remote OK goes directly to Online and hands off focus in order');
 }
 
@@ -237,6 +252,7 @@ function makeNoticeClient() {
     dom.modal.onSelect(dom.modal.select);
     assert.equal(selections.length, 0);
     assert.equal(dom.closes, 1);
+    assert.equal(activities.length, 1, 'disabled mode must not add an extra activity');
     assert.equal(activities[0].component, 'full');
     console.log('PASS: disabled toggle preserves remote OK -> series card');
 }
