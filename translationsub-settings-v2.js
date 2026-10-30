@@ -12,7 +12,8 @@
         smartTmdb: 'translationsub_tmdb_schedule',
         tmdbRefreshHours: 'translationsub_tmdb_refresh_hours',
         newSeasonMode: 'translationsub_new_season_mode',
-        showNoticeSources: 'translationsub_show_notice_sources'
+        showNoticeSources: 'translationsub_show_notice_sources',
+        directNoticePlayback: 'translationsub_direct_notice_playback'
     };
 
     var serverReady = false;
@@ -192,11 +193,13 @@
         var tmdbHours = pick(settings, 'TmdbRefreshHours', 'tmdbRefreshHours', null);
         var seasonMode = pick(settings, 'NewSeasonMode', 'newSeasonMode', null);
         var showNoticeSources = pick(settings, 'ShowNoticeSources', 'showNoticeSources', null);
+        var directNoticePlayback = pick(settings, 'DirectNoticePlayback', 'directNoticePlayback', null);
         if (interval !== null) storageSet(KEYS.interval, String(interval));
         if (smart !== null) storageSet(KEYS.smartTmdb, triggerStorageValue(smart, false));
         if (tmdbHours !== null) storageSet(KEYS.tmdbRefreshHours, String(tmdbHours));
         if (seasonMode !== null) storageSet(KEYS.newSeasonMode, String(seasonMode));
         if (showNoticeSources !== null) storageSet(KEYS.showNoticeSources, triggerStorageValue(showNoticeSources, true));
+        if (directNoticePlayback !== null) storageSet(KEYS.directNoticePlayback, triggerStorageValue(directNoticePlayback, false));
 
         availableItems.forEach(function (item) {
             var key = sourceParamKeys[item.id] || sourceParamKey(item.id);
@@ -225,12 +228,14 @@
         var tmdbHours = intOrNull(KEYS.tmdbRefreshHours);
         var seasonMode = storageGet(KEYS.newSeasonMode, null);
         var showNoticeSources = boolOrNull(KEYS.showNoticeSources);
+        var directNoticePlayback = boolOrNull(KEYS.directNoticePlayback);
 
         if (interval !== null) body.checkIntervalHours = interval;
         if (smart !== null) body.useTmdbSchedule = smart;
         if (tmdbHours !== null) body.tmdbRefreshHours = tmdbHours;
         if (seasonMode !== null && seasonMode !== '') body.newSeasonMode = String(seasonMode);
         if (showNoticeSources !== null) body.showNoticeSources = showNoticeSources;
+        if (directNoticePlayback !== null) body.directNoticePlayback = directNoticePlayback;
         return body;
     }
 
@@ -410,6 +415,23 @@
                 'Когда начинается новый сезон',
                 'Поведение подписки после появления следующего сезона.'
             );
+
+            var directDefault = schemaDefault('directNoticePlayback');
+            if (directDefault !== null) {
+                Lampa.SettingsApi.addParam({
+                    component: ROOT,
+                    param: { name: KEYS.directNoticePlayback, type: 'trigger', values: '', 'default': !!directDefault },
+                    field: {
+                        name: 'Прямой переход к просмотру из уведомлений',
+                        description: 'При нажатии открывать Online-балансер с нужной озвучкой и сезоном (экспериментально).'
+                    },
+                    onChange: function (value) {
+                        storageSet(KEYS.directNoticePlayback,
+                            triggerStorageValue(value, settingBool(KEYS.directNoticePlayback, !!directDefault)));
+                        syncServerSettings();
+                    }
+                });
+            }
 
             var noticeSourceDefault = schemaDefault('showNoticeSources');
             if (noticeSourceDefault !== null) {
