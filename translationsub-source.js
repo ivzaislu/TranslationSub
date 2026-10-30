@@ -141,16 +141,34 @@
                 lampac_custom_select: balancer
             };
 
-            // Close the notification modal first, and navigate on the next
-            // event-loop turn. Lampa can otherwise restore the modal's old
-            // controller *after* Online opens and steal the TV remote focus.
+            // The stock Lampa Explorer poster acts as Activity.back() when
+            // there is a previous activity. Insert the series card *only* for
+            // this opt-in notification -> Online route, immediately underneath
+            // Lampac. OK on the poster then reveals the series card; regular
+            // navigation and the disabled setting remain unchanged.
+            var seriesCard = {
+                url: '',
+                component: 'full',
+                source: 'tmdb',
+                id: id,
+                method: 'tv',
+                card: movie
+            };
+
+            // Close the notice modal before handing TV remote focus to the
+            // activity stack. Both pushes are synchronous and ordered.
             if (hooks && typeof hooks.beforeNavigate === 'function')
                 hooks.beforeNavigate();
             setTimeout(function () {
+                var cardAdded = false;
                 try {
+                    Lampa.Activity.push(seriesCard);
+                    cardAdded = true;
                     Lampa.Activity.push(activity);
                 } catch (e) {
-                    if (hooks && typeof hooks.onFailure === 'function')
+                    // If Online fails after inserting the card, leave that
+                    // already-open card visible (no duplicate fallback push).
+                    if (!cardAdded && hooks && typeof hooks.onFailure === 'function')
                         hooks.onFailure();
                 }
             }, 0);
