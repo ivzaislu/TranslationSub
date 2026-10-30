@@ -13,6 +13,8 @@ public class TranslationUserSettings
     public List<string> Sources { get; set; } = new();
     public bool UseTmdbSchedule { get; set; } = true;
     public int TmdbRefreshHours { get; set; } = 24;
+    // Legacy database column only. This option is no longer exposed or used.
+    [JsonIgnore]
     public int EndedRefreshDays { get; set; } = 7;
     public string NewSeasonMode { get; set; } = "auto";
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
@@ -166,7 +168,6 @@ ON CONFLICT(uid) DO UPDATE SET
         IEnumerable<string> sources,
         bool? useTmdbSchedule = null,
         int? tmdbRefreshHours = null,
-        int? endedRefreshDays = null,
         string newSeasonMode = null)
     {
         uid = string.IsNullOrWhiteSpace(uid) ? null : uid.Trim();
@@ -181,7 +182,6 @@ ON CONFLICT(uid) DO UPDATE SET
             current.Sources = sources?.ToList() ?? new List<string>();
             if (useTmdbSchedule.HasValue) current.UseTmdbSchedule = useTmdbSchedule.Value;
             if (tmdbRefreshHours.HasValue) current.TmdbRefreshHours = tmdbRefreshHours.Value;
-            if (endedRefreshDays.HasValue) current.EndedRefreshDays = endedRefreshDays.Value;
             if (!string.IsNullOrWhiteSpace(newSeasonMode)) current.NewSeasonMode = newSeasonMode;
 
             Normalize(current, uid, true);
@@ -221,17 +221,6 @@ ON CONFLICT(uid) DO UPDATE SET
                     ["48"] = "2 дня",
                     ["72"] = "3 дня",
                     ["168"] = "7 дней"
-                }
-            },
-            endedRefreshDays = new
-            {
-                defaultValue = 7,
-                values = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["7"] = "7 дней",
-                    ["14"] = "14 дней",
-                    ["30"] = "30 дней",
-                    ["60"] = "60 дней"
                 }
             },
             newSeasonMode = new
