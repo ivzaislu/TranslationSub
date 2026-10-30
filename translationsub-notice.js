@@ -71,6 +71,7 @@
         descr.empty();
         descr.append($('<div></div>').text(voice));
         if (display.noticeRange) descr.append($('<div></div>').text(String(display.noticeRange)));
+        if (display.noticeSources) descr.append($('<div></div>').text(String(display.noticeSources)));
 
         var img = card.find('.notice__img img').first();
         if (poster && img.length) {
