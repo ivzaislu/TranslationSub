@@ -91,7 +91,7 @@
         var season = Math.floor(Number(item && item.season));
         var voice = String(entry && (entry.translationName || item.translationName) || '').trim();
         var balancer = String(entry && entry.source || '').toLowerCase().trim();
-        if (!/^\\d+$/.test(tmdbId) || !Number.isSafeInteger(Number(tmdbId))
+        if (!/^\d+$/.test(tmdbId) || !Number.isSafeInteger(Number(tmdbId))
             || !Number.isInteger(season) || season < 1 || !voice || !balancer)
             return false;
 
