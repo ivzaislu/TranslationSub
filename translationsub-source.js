@@ -110,7 +110,9 @@
             poster_path: item.poster || '',
             imdb_id: item.imdbId || '',
             kinopoisk_id: item.kpId || '',
-            first_air_date: item.year ? (String(item.year) + '-01-01') : ''
+            // Lampac reads the year from the first four characters.
+            // Do not fabricate an actual premiere date.
+            first_air_date: item.year ? String(item.year) : ''
         };
 
         try {
