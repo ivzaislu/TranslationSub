@@ -47,6 +47,11 @@ public static class TranslationSubscriptionService
 
             DateTime now = DateTime.Now;
             var snapshot = SubscriptionStore.Load();
+            // Remember terminal series before polling: another season/voice might
+            // still have an old active status for the same user's series.
+            var terminalSubscriptions = snapshot
+                .Where(x => x != null && x.IsSerial && IsEndedStatus(x.TmdbStatus))
+                .ToList();
             using var storeBatch = SubscriptionStore.BeginBatch();
             var settingsCache = new Dictionary<string, TranslationUserSettings>(StringComparer.Ordinal);
             var tmdbCache = new Dictionary<string, TmdbScheduleSnapshot>(StringComparer.OrdinalIgnoreCase);
@@ -59,6 +64,11 @@ public static class TranslationSubscriptionService
 
                 try
                 {
+                    // Already-ended/cancelled series require no more TMDB or
+                    // balancer requests, including during a forced check.
+                    if (terminalSubscriptions.Any(x => SameSeries(x, sub)))
+                        continue;
+
                     string settingsKey = sub.Uid?.Trim();
                     if (string.IsNullOrWhiteSpace(settingsKey))
                         continue;
@@ -79,9 +89,12 @@ public static class TranslationSubscriptionService
                         if (!string.IsNullOrWhiteSpace(identityKey)
                             && tmdbCache.TryGetValue(identityKey, out tmdb))
                         {
-                            ApplyTmdbState(sub.Id, tmdb, settings, now);
-                            CopyTmdbState(sub, tmdb, settings, now);
-                            HandleNewSeason(sub, tmdb, settings, now);
+                            if (!IsEndedStatus(tmdb.Status))
+                            {
+                                ApplyTmdbState(sub.Id, tmdb, settings, now);
+                                CopyTmdbState(sub, tmdb, settings, now);
+                                HandleNewSeason(sub, tmdb, settings, now);
+                            }
                         }
                         else if (force || ShouldRefreshTmdb(sub, settings, now))
                         {
@@ -94,10 +107,31 @@ public static class TranslationSubscriptionService
                                 if (!string.IsNullOrWhiteSpace(identityKey))
                                     tmdbCache[identityKey] = tmdb;
 
-                                ApplyTmdbState(sub.Id, tmdb, settings, now);
-                                CopyTmdbState(sub, tmdb, settings, now);
-                                HandleNewSeason(sub, tmdb, settings, now);
+                                if (!IsEndedStatus(tmdb.Status))
+                                {
+                                    ApplyTmdbState(sub.Id, tmdb, settings, now);
+                                    CopyTmdbState(sub, tmdb, settings, now);
+                                    HandleNewSeason(sub, tmdb, settings, now);
+                                }
                             }
+                        }
+
+                        if (IsEndedStatus(tmdb?.Status))
+                        {
+                            terminalSubscriptions.Add(sub);
+                            // TMDB may resolve a corrected ID from IMDb; cover
+                            // sibling subscriptions that already use that ID.
+                            if (!string.IsNullOrWhiteSpace(tmdb.TmdbId))
+                            {
+                                terminalSubscriptions.Add(new TranslationSubscription
+                                {
+                                    Uid = sub.Uid,
+                                    IsSerial = true,
+                                    TmdbId = tmdb.TmdbId,
+                                    ImdbId = tmdb.ImdbId
+                                });
+                            }
+                            continue;
                         }
 
                         if (tmdb == null)
@@ -215,6 +249,15 @@ public static class TranslationSubscriptionService
                 {
                     // One broken subscription or balancer must not stop the queue.
                 }
+            }
+
+            if (terminalSubscriptions.Count > 0)
+            {
+                // SubscriptionStore cleans profile_progress for every deletion
+                // in the SAME SQLite transaction. Lampac TimeCode is untouched.
+                SubscriptionStore.Mutate(list => list.RemoveAll(sub =>
+                    sub != null && sub.IsSerial
+                    && terminalSubscriptions.Any(terminal => SameSeries(terminal, sub))));
             }
         }
         catch
@@ -475,10 +518,33 @@ public static class TranslationSubscriptionService
             && tmdb.NextAirDate.Value.Date <= now.Date;
     }
 
-    static bool IsEndedStatus(string status)
+    internal static bool IsEndedStatus(string status)
         => string.Equals(status, "Ended", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "Canceled", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "Cancelled", StringComparison.OrdinalIgnoreCase);
+
+    static bool SameSeries(TranslationSubscription left, TranslationSubscription right)
+    {
+        if (left == null || right == null || !left.IsSerial || !right.IsSerial
+            || !string.Equals(left.Uid, right.Uid, StringComparison.Ordinal))
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(left.Id)
+            && string.Equals(left.Id, right.Id, StringComparison.Ordinal))
+            return true;
+
+        // Match only explicit content identifiers; titles are not unique.
+        return SameId(left.TmdbId, right.TmdbId)
+            || SameId(left.ImdbId, right.ImdbId, ignoreCase: true)
+            || SameId(left.KpId, right.KpId)
+            || SameId(left.ContentId, right.ContentId);
+    }
+
+    static bool SameId(string left, string right, bool ignoreCase = false)
+        => !string.IsNullOrWhiteSpace(left)
+        && !string.IsNullOrWhiteSpace(right)
+        && string.Equals(left.Trim(), right.Trim(),
+            ignoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     static void SetScheduleState(string subscriptionId, string state, int expectedAired)
     {
