@@ -14,6 +14,7 @@ public class TranslationUserSettings
     public bool UseTmdbSchedule { get; set; } = true;
     public int TmdbRefreshHours { get; set; } = 24;
     public bool ShowNoticeSources { get; set; } = true;
+    public bool DirectNoticePlayback { get; set; } = false;
     // Legacy database column only. This option is no longer exposed or used.
     [JsonIgnore]
     public int EndedRefreshDays { get; set; } = 7;
@@ -32,7 +33,7 @@ public static class TranslationSettingsStore
         using var command = connection.CreateCommand();
         command.CommandText = @"
 SELECT uid, check_interval_hours, sources_json, use_tmdb_schedule,
-       tmdb_refresh_hours, ended_refresh_days, new_season_mode, show_notice_sources, updated_at
+       tmdb_refresh_hours, ended_refresh_days, new_season_mode, show_notice_sources, notice_direct_playback, updated_at
 FROM settings
 WHERE uid = $uid
 LIMIT 1;";
@@ -51,6 +52,7 @@ LIMIT 1;";
             TmdbRefreshHours = reader.GetInt32(reader.GetOrdinal("tmdb_refresh_hours")),
             EndedRefreshDays = reader.GetInt32(reader.GetOrdinal("ended_refresh_days")),
             ShowNoticeSources = reader.GetInt32(reader.GetOrdinal("show_notice_sources")) != 0,
+            DirectNoticePlayback = reader.GetInt32(reader.GetOrdinal("notice_direct_playback")) != 0,
             NewSeasonMode = reader.GetString(reader.GetOrdinal("new_season_mode")),
             UpdatedAt = TranslationSubDatabase.ReadDateTime(reader, "updated_at", DateTime.Now)
         };
@@ -63,10 +65,10 @@ LIMIT 1;";
         command.CommandText = @"
 INSERT INTO settings (
     uid, check_interval_hours, sources_json, use_tmdb_schedule,
-    tmdb_refresh_hours, ended_refresh_days, new_season_mode, show_notice_sources, updated_at
+    tmdb_refresh_hours, ended_refresh_days, new_season_mode, show_notice_sources, notice_direct_playback, updated_at
 ) VALUES (
     $uid, $check_interval_hours, $sources_json, $use_tmdb_schedule,
-    $tmdb_refresh_hours, $ended_refresh_days, $new_season_mode, $show_notice_sources, $updated_at
+    $tmdb_refresh_hours, $ended_refresh_days, $new_season_mode, $show_notice_sources, $notice_direct_playback, $updated_at
 )
 ON CONFLICT(uid) DO UPDATE SET
     check_interval_hours = excluded.check_interval_hours,
@@ -76,6 +78,7 @@ ON CONFLICT(uid) DO UPDATE SET
     ended_refresh_days = excluded.ended_refresh_days,
     new_season_mode = excluded.new_season_mode,
     show_notice_sources = excluded.show_notice_sources,
+    notice_direct_playback = excluded.notice_direct_playback,
     updated_at = excluded.updated_at;";
 
         command.Parameters.AddWithValue("$uid", value.Uid);
@@ -86,6 +89,7 @@ ON CONFLICT(uid) DO UPDATE SET
         command.Parameters.AddWithValue("$ended_refresh_days", value.EndedRefreshDays);
         command.Parameters.AddWithValue("$new_season_mode", value.NewSeasonMode);
         command.Parameters.AddWithValue("$show_notice_sources", value.ShowNoticeSources ? 1 : 0);
+        command.Parameters.AddWithValue("$notice_direct_playback", value.DirectNoticePlayback ? 1 : 0);
         command.Parameters.AddWithValue("$updated_at", TranslationSubDatabase.DateTimeText(value.UpdatedAt));
         command.ExecuteNonQuery();
     }
@@ -147,6 +151,7 @@ ON CONFLICT(uid) DO UPDATE SET
             UseTmdbSchedule = value.UseTmdbSchedule,
             TmdbRefreshHours = value.TmdbRefreshHours,
             ShowNoticeSources = value.ShowNoticeSources,
+            DirectNoticePlayback = value.DirectNoticePlayback,
             EndedRefreshDays = value.EndedRefreshDays,
             NewSeasonMode = value.NewSeasonMode,
             UpdatedAt = value.UpdatedAt
@@ -174,7 +179,8 @@ ON CONFLICT(uid) DO UPDATE SET
         bool? useTmdbSchedule = null,
         int? tmdbRefreshHours = null,
         string newSeasonMode = null,
-        bool? showNoticeSources = null)
+        bool? showNoticeSources = null,
+        bool? directNoticePlayback = null)
     {
         uid = string.IsNullOrWhiteSpace(uid) ? null : uid.Trim();
         if (uid == null)
@@ -190,6 +196,7 @@ ON CONFLICT(uid) DO UPDATE SET
             if (tmdbRefreshHours.HasValue) current.TmdbRefreshHours = tmdbRefreshHours.Value;
             if (!string.IsNullOrWhiteSpace(newSeasonMode)) current.NewSeasonMode = newSeasonMode;
             if (showNoticeSources.HasValue) current.ShowNoticeSources = showNoticeSources.Value;
+            if (directNoticePlayback.HasValue) current.DirectNoticePlayback = directNoticePlayback.Value;
 
             Normalize(current, uid, true);
             SaveUnsafe(current);
@@ -233,6 +240,10 @@ ON CONFLICT(uid) DO UPDATE SET
             showNoticeSources = new
             {
                 defaultValue = true
+            },
+            directNoticePlayback = new
+            {
+                defaultValue = false
             },
             newSeasonMode = new
             {
