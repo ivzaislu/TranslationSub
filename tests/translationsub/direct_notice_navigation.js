@@ -142,6 +142,35 @@ const activeOther = { ...stale, latestEpisode: 3 };
     console.log('PASS: missing Lampac Online plugin triggers fallback');
 }
 
+{
+    const { client, activities } = makeClient();
+    const push = client.Lampa.Activity.push;
+    client.Lampa.Activity.push = function (activity) {
+        if (activity.component === 'lampac') throw new Error('Online failed to open');
+        push(activity);
+    };
+    let fallbackCalls = 0;
+    assert.equal(client.TranslationSubCardSource.openNoticeOnline(item([active]), {
+        onFailure() { fallbackCalls++; }
+    }), true);
+    assert.equal(activities.length, 1, 'keep the already-open series card on Online error');
+    assert.equal(activities[0].component, 'full');
+    assert.equal(fallbackCalls, 0, 'do not stack a second fallback card');
+    console.log('PASS: Online activity error leaves a single usable series card');
+}
+
+{
+    const { client, activities } = makeClient();
+    client.Lampa.Activity.push = function () { throw new Error('Series card failed to open'); };
+    let fallbackCalls = 0;
+    assert.equal(client.TranslationSubCardSource.openNoticeOnline(item([active]), {
+        onFailure() { fallbackCalls++; }
+    }), true);
+    assert.equal(fallbackCalls, 1, 'invoke normal fallback when the first card fails');
+    assert.equal(activities.length, 0);
+    console.log('PASS: failed intermediate series card invokes normal fallback');
+}
+
 // A minimal DOM stub exercises the real notice -> Lampa.Select ->
 // Lampac Activity path without a browser, using Lampa's own selection hooks.
 function makeNoticeClient() {
