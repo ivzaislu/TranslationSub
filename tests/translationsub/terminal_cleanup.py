@@ -95,6 +95,25 @@ for name in balancer_paths:
     assert stats_after.get(name, 0) == balancers_before[name], name
 print("PASS: terminal statuses remove every voice/season, spare other user and TimeCode")
 
+# Terminal detection must work when the user disables TMDB smart scheduling.
+off_uid = "ts-terminal-tmdb-off-ci"
+request(LAMPAC + "/translationsub/v2/settings?uid=" + off_uid,
+        {"uid": off_uid, "sources": [], "useTmdbSchedule": False})
+with sqlite3.connect(DB) as db:
+    db.execute("DELETE FROM profile_progress WHERE uid = ?", (off_uid,))
+    db.execute("DELETE FROM subscriptions WHERE uid = ?", (off_uid,))
+    add(db, "smart-off-ended", off_uid, "127", None)
+    db.commit()
+before_off = request(MOCK + "/__stats")["counts"].get("/tmdb/tv/127", 0)
+checked_off = request(LAMPAC + "/translationsub/v2/check?uid=" + off_uid, {})
+assert checked_off.get("success") is True, checked_off
+assert checked_off["snapshot"]["subscriptions"] == [], checked_off
+with sqlite3.connect(DB) as db:
+    assert db.execute("SELECT COUNT(*) FROM subscriptions WHERE uid = ?", (off_uid,)).fetchone()[0] == 0
+    assert db.execute("SELECT COUNT(*) FROM profile_progress WHERE uid = ?", (off_uid,)).fetchone()[0] == 0
+assert request(MOCK + "/__stats")["counts"].get("/tmdb/tv/127", 0) > before_off
+print("PASS: TMDB status cleanup works with smart scheduling disabled")
+
 # A new subscription for an already-ended series must never be recreated.
 card = {
     "id": 124, "tmdb_id": 124, "imdb_id": "tt0000124",
