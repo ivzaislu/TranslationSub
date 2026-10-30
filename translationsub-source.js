@@ -80,7 +80,7 @@
         });
     }
 
-    function openOnBalancer(item, entry) {
+    function openOnBalancer(item, entry, hooks) {
         if (!window.lampac_plugin || !window.Lampa || !Lampa.Activity
             || typeof Lampa.Activity.push !== 'function'
             || !Lampa.Storage || typeof Lampa.Storage.cache !== 'function'
@@ -128,7 +128,7 @@
             });
             Lampa.Storage.set(key, choices);
 
-            Lampa.Activity.push({
+            var activity = {
                 url: '',
                 title: 'Онлайн · ' + title,
                 component: 'lampac',
@@ -139,18 +139,32 @@
                 page: 1,
                 clarification: false,
                 lampac_custom_select: balancer
-            });
+            };
+
+            // Close the notification modal first, and navigate on the next
+            // event-loop turn. Lampa can otherwise restore the modal's old
+            // controller *after* Online opens and steal the TV remote focus.
+            if (hooks && typeof hooks.beforeNavigate === 'function')
+                hooks.beforeNavigate();
+            setTimeout(function () {
+                try {
+                    Lampa.Activity.push(activity);
+                } catch (e) {
+                    if (hooks && typeof hooks.onFailure === 'function')
+                        hooks.onFailure();
+                }
+            }, 0);
             return true;
         } catch (e) {
             return false;
         }
     }
 
-    function openNoticeOnline(item) {
+    function openNoticeOnline(item, hooks) {
         var candidates = latestEpisodeSources(item);
         if (!candidates.length || !window.lampac_plugin) return false;
 
-        if (candidates.length === 1) return openOnBalancer(item, candidates[0]);
+        if (candidates.length === 1) return openOnBalancer(item, candidates[0], hooks);
         if (!window.Lampa || !Lampa.Select || typeof Lampa.Select.show !== 'function')
             return false;
 
@@ -166,9 +180,17 @@
                     };
                 }),
                 onSelect: function (chosen) {
-                    try { if (Lampa.Select.close) Lampa.Select.close(); } catch (e) {}
-                    if (!openOnBalancer(item, chosen.sourceEntry)) openCard(item);
+                    // Lampa Select automatically closes itself on OK, *before*
+                    // calling onSelect. A second Select.close() closes the
+                    // underlying modal or steals focus on television.
+                    if (!openOnBalancer(item, chosen && chosen.sourceEntry, hooks)) {
+                        if (hooks && typeof hooks.onFailure === 'function')
+                            hooks.onFailure();
+                        else openCard(item);
+                    }
                 }
+                // No onBack handler: Lampa's window stack returns to the
+                // original focused notification when the remote presses Back.
             });
             return true;
         } catch (e) {
