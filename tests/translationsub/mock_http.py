@@ -54,6 +54,7 @@ class Handler(BaseHTTPRequestHandler):
             "/tmdb/tv/124": ("Ended", "tt0000124"),
             "/tmdb/tv/125": ("Canceled", "tt0000125"),
             "/tmdb/tv/126": ("Cancelled", "tt0000126"),
+            "/tmdb/tv/127": ("Ended", "tt0000127"),
         }
         if path in terminal_statuses:
             status, imdb_id = terminal_statuses[path]
