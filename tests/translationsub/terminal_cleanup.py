@@ -127,3 +127,32 @@ with sqlite3.connect(DB) as db:
     assert db.execute("SELECT COUNT(*) FROM subscriptions WHERE uid = ? AND tmdb_id = '124'",
                       (UID,)).fetchone()[0] == 0
 print("PASS: terminal TMDB status rejects a new subscription")
+
+# Legacy ended_refresh_days remains in SQLite for compatibility, but is
+# no longer exposed in the user settings schema or writable through the API.
+settings_uid = "ts-retired-ended-setting-ci"
+settings_endpoint = LAMPAC + "/translationsub/v2/settings?uid=" + settings_uid
+initial_settings = request(settings_endpoint, {"uid": settings_uid, "checkIntervalHours": 2})
+assert initial_settings["success"] is True, initial_settings
+with sqlite3.connect(DB) as db:
+    db.execute("UPDATE settings SET ended_refresh_days = 47 WHERE uid = ?", (settings_uid,))
+    db.commit()
+
+updated_settings = request(settings_endpoint, {
+    "uid": settings_uid,
+    "checkIntervalHours": 3,
+    "endedRefreshDays": 1,  # obsolete client value must be ignored
+})
+assert updated_settings["success"] is True, updated_settings
+for response in (updated_settings, request(settings_endpoint)):
+    assert "endedRefreshDays" not in response["schema"], response
+    assert "EndedRefreshDays" not in response["settings"], response
+    assert "endedRefreshDays" not in response["settings"], response
+
+with sqlite3.connect(DB) as db:
+    row = db.execute(
+        "SELECT ended_refresh_days, check_interval_hours FROM settings WHERE uid = ?",
+        (settings_uid,),
+    ).fetchone()
+assert row == (47, 3), row
+print("PASS: retired refresh setting is hidden/ignored and legacy SQLite data is preserved")
