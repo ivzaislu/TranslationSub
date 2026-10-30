@@ -37,7 +37,7 @@ public static class TranslationSubSnapshotService
         }
 
         var subscriptions = TranslationSubProjectionService.ForProfile(uid, profileId)
-            .Select(x => ToSnapshot(x, showNoticeSources, sourceNames)
+            .Select(x => ToSnapshot(x, showNoticeSources, sourceNames))
             .OrderByDescending(x => x.HasNewEpisodes)
             .ThenBy(x => x.Title ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.TranslationName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
