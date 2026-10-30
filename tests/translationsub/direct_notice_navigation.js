@@ -209,6 +209,30 @@ function makeNoticeClient() {
 
 {
     const { client, activities, selections, dom } = makeNoticeClient();
+    const events = [];
+    const closeModal = client.Lampa.Modal.close;
+    const push = client.Lampa.Activity.push;
+    client.Lampa.Modal.close = function () {
+        events.push('modal closed');
+        closeModal();
+    };
+    client.Lampa.Activity.push = function (activity) {
+        events.push('activity opened');
+        push(activity);
+    };
+    client.TranslationSubNotice.open([item([active])], true);
+    assert.ok(dom.modal.select, 'single-source notification has an initial remote focus');
+    dom.modal.onSelect(dom.modal.select);
+    assert.equal(selections.length, 0, 'single source requires no extra remote input');
+    assert.equal(dom.closes, 1);
+    assert.deepEqual(events, ['modal closed', 'activity opened'],
+        'release the modal controller before Lampac takes TV remote focus');
+    assert.equal(activities[0].component, 'lampac');
+    console.log('PASS: remote OK goes directly to Online and hands off focus in order');
+}
+
+{
+    const { client, activities, selections, dom } = makeNoticeClient();
     client.TranslationSubNotice.open([item([active])], false);
     dom.modal.onSelect(dom.modal.select);
     assert.equal(selections.length, 0);
