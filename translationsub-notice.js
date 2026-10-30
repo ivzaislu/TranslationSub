@@ -35,13 +35,18 @@
         }, 0);
     }
 
-    function openUpdate(item, previousController) {
+    function openUpdate(item, previousController, directEnabled) {
         closeAndRestore(previousController);
         setTimeout(function () {
             try {
-                if (window.TranslationSubCardSource && typeof window.TranslationSubCardSource.open === 'function') {
-                    window.TranslationSubCardSource.open(item);
-                    return;
+                if (window.TranslationSubCardSource) {
+                    var source = window.TranslationSubCardSource;
+                    if (directEnabled && typeof source.openNoticeOnline === 'function'
+                        && source.openNoticeOnline(item)) return;
+                    if (typeof source.open === 'function') {
+                        source.open(item);
+                        return;
+                    }
                 }
             } catch (e) {}
             openSubscriptionsPage();
@@ -108,7 +113,7 @@
         return item;
     }
 
-    function renderDrawer(updates, previousController) {
+    function renderDrawer(updates, previousController, directEnabled) {
         updates = Array.isArray(updates) ? updates : [];
 
         var html = $('<div class="translationsub-notice"></div>');
@@ -132,7 +137,7 @@
                     var node = $(selected);
                     var index = parseInt(node.attr('data-translationsub-update'), 10);
                     if (isNaN(index) || !updates[index]) return;
-                    openUpdate(updates[index], previousController);
+                    openUpdate(updates[index], previousController, directEnabled);
                 },
                 onBack: function () { closeAndRestore(previousController); }
             });
@@ -141,14 +146,14 @@
         }
     }
 
-    function openDrawer(preloadedUpdates) {
+    function openDrawer(preloadedUpdates, directEnabled) {
         if (!window.Lampa || !Lampa.Modal || typeof Lampa.Modal.open !== 'function') {
             openSubscriptionsPage();
             return;
         }
 
         var previousController = window.TranslationSubRuntime.controllerName('head');
-        renderDrawer(Array.isArray(preloadedUpdates) ? preloadedUpdates : [], previousController);
+        renderDrawer(Array.isArray(preloadedUpdates) ? preloadedUpdates : [], previousController, !!directEnabled);
     }
 
     function start() {
