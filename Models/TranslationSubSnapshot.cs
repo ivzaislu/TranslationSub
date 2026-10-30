@@ -209,6 +209,9 @@ public class TranslationSubDisplaySnapshot
     [JsonProperty("noticeRange")]
     public string NoticeRange { get; set; }
 
+    [JsonProperty("noticeSources")]
+    public string NoticeSources { get; set; }
+
     [JsonProperty("tmdbFacts")]
     public string TmdbFacts { get; set; }
 

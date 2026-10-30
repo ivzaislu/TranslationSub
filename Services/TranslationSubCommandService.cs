@@ -31,6 +31,32 @@ public static class TranslationSubCommandService
         if (string.IsNullOrWhiteSpace(content.ContentId) && string.IsNullOrWhiteSpace(content.Title))
             return Fail("identity_unresolved");
 
+        // A terminal status already saved for another voice/season is enough
+        // to reject a new subscription without an external request.
+        if (SubscriptionStore.Load().Any(x => x != null
+            && x.IsSerial
+            && string.Equals(x.Uid, uid, StringComparison.Ordinal)
+            && TranslationSubContentStateService.SameContent(x, content)
+            && TranslationSubscriptionService.IsEndedStatus(x.TmdbStatus)))
+            return Fail("series_ended");
+
+        TmdbScheduleSnapshot tmdb = null;
+        if (!string.IsNullOrWhiteSpace(content.TmdbId) || !string.IsNullOrWhiteSpace(content.ImdbId))
+        {
+            try
+            {
+                tmdb = await TmdbScheduleService.Get(content.TmdbId, content.ImdbId).ConfigureAwait(false);
+            }
+            catch
+            {
+                tmdb = null;
+            }
+        }
+
+        // Do not recreate subscriptions that the scheduler would remove.
+        if (TranslationSubscriptionService.IsEndedStatus(tmdb?.Status))
+            return Fail("series_ended");
+
         var selectedSources = (TranslationSettingsStore.Get(uid).Sources ?? new List<string>())
             .Select(TranslationSettingsStore.NormalizeSourceId)
             .Where(x => x != null)
@@ -61,19 +87,6 @@ public static class TranslationSubCommandService
         var sources = VariantSources(variant);
         if (sources.Count == 0)
             return Fail("voice_sources_not_found");
-
-        TmdbScheduleSnapshot tmdb = null;
-        if (!string.IsNullOrWhiteSpace(content.TmdbId) || !string.IsNullOrWhiteSpace(content.ImdbId))
-        {
-            try
-            {
-                tmdb = await TmdbScheduleService.Get(content.TmdbId, content.ImdbId).ConfigureAwait(false);
-            }
-            catch
-            {
-                tmdb = null;
-            }
-        }
 
         string subscriptionId = null;
         int season = Math.Max(1, content.Season);
@@ -210,7 +223,8 @@ public static class TranslationSubCommandService
                 {
                     Source = TranslationSettingsStore.NormalizeSourceId(x.Source) ?? x.Source,
                     TranslationId = x.TranslationId,
-                    TranslationName = x.TranslationName
+                    TranslationName = x.TranslationName,
+                    LatestEpisode = Math.Max(0, x.LatestEpisode)
                 })
                 .GroupBy(x => x.Source ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .Select(x => x.First())
@@ -227,7 +241,8 @@ public static class TranslationSubCommandService
             {
                 Source = source,
                 TranslationId = variant.translation_id,
-                TranslationName = variant.translation
+                TranslationName = variant.translation,
+                LatestEpisode = Math.Max(0, variant.episode)
             }
         };
     }

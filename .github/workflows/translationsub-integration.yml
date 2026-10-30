@@ -286,6 +286,12 @@ jobs:
           set -euo pipefail
           python3 tests/translationsub/external_integration.py
 
+      - name: Verify terminal-series auto-unsubscribe and TimeCode preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/translationsub/terminal_cleanup.py
+
       - name: Diagnostic tail
         if: failure()
         shell: bash

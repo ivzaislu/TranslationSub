@@ -13,6 +13,9 @@ public class TranslationUserSettings
     public List<string> Sources { get; set; } = new();
     public bool UseTmdbSchedule { get; set; } = true;
     public int TmdbRefreshHours { get; set; } = 24;
+    public bool ShowNoticeSources { get; set; } = true;
+    // Legacy database column only. This option is no longer exposed or used.
+    [JsonIgnore]
     public int EndedRefreshDays { get; set; } = 7;
     public string NewSeasonMode { get; set; } = "auto";
     public DateTime UpdatedAt { get; set; } = DateTime.Now;
@@ -29,7 +32,7 @@ public static class TranslationSettingsStore
         using var command = connection.CreateCommand();
         command.CommandText = @"
 SELECT uid, check_interval_hours, sources_json, use_tmdb_schedule,
-       tmdb_refresh_hours, ended_refresh_days, new_season_mode, updated_at
+       tmdb_refresh_hours, ended_refresh_days, new_season_mode, show_notice_sources, updated_at
 FROM settings
 WHERE uid = $uid
 LIMIT 1;";
@@ -47,6 +50,7 @@ LIMIT 1;";
             UseTmdbSchedule = reader.GetInt32(reader.GetOrdinal("use_tmdb_schedule")) != 0,
             TmdbRefreshHours = reader.GetInt32(reader.GetOrdinal("tmdb_refresh_hours")),
             EndedRefreshDays = reader.GetInt32(reader.GetOrdinal("ended_refresh_days")),
+            ShowNoticeSources = reader.GetInt32(reader.GetOrdinal("show_notice_sources")) != 0,
             NewSeasonMode = reader.GetString(reader.GetOrdinal("new_season_mode")),
             UpdatedAt = TranslationSubDatabase.ReadDateTime(reader, "updated_at", DateTime.Now)
         };
@@ -59,10 +63,10 @@ LIMIT 1;";
         command.CommandText = @"
 INSERT INTO settings (
     uid, check_interval_hours, sources_json, use_tmdb_schedule,
-    tmdb_refresh_hours, ended_refresh_days, new_season_mode, updated_at
+    tmdb_refresh_hours, ended_refresh_days, new_season_mode, show_notice_sources, updated_at
 ) VALUES (
     $uid, $check_interval_hours, $sources_json, $use_tmdb_schedule,
-    $tmdb_refresh_hours, $ended_refresh_days, $new_season_mode, $updated_at
+    $tmdb_refresh_hours, $ended_refresh_days, $new_season_mode, $show_notice_sources, $updated_at
 )
 ON CONFLICT(uid) DO UPDATE SET
     check_interval_hours = excluded.check_interval_hours,
@@ -71,6 +75,7 @@ ON CONFLICT(uid) DO UPDATE SET
     tmdb_refresh_hours = excluded.tmdb_refresh_hours,
     ended_refresh_days = excluded.ended_refresh_days,
     new_season_mode = excluded.new_season_mode,
+    show_notice_sources = excluded.show_notice_sources,
     updated_at = excluded.updated_at;";
 
         command.Parameters.AddWithValue("$uid", value.Uid);
@@ -80,6 +85,7 @@ ON CONFLICT(uid) DO UPDATE SET
         command.Parameters.AddWithValue("$tmdb_refresh_hours", value.TmdbRefreshHours);
         command.Parameters.AddWithValue("$ended_refresh_days", value.EndedRefreshDays);
         command.Parameters.AddWithValue("$new_season_mode", value.NewSeasonMode);
+        command.Parameters.AddWithValue("$show_notice_sources", value.ShowNoticeSources ? 1 : 0);
         command.Parameters.AddWithValue("$updated_at", TranslationSubDatabase.DateTimeText(value.UpdatedAt));
         command.ExecuteNonQuery();
     }
@@ -140,6 +146,7 @@ ON CONFLICT(uid) DO UPDATE SET
             Sources = value.Sources?.ToList() ?? new List<string>(),
             UseTmdbSchedule = value.UseTmdbSchedule,
             TmdbRefreshHours = value.TmdbRefreshHours,
+            ShowNoticeSources = value.ShowNoticeSources,
             EndedRefreshDays = value.EndedRefreshDays,
             NewSeasonMode = value.NewSeasonMode,
             UpdatedAt = value.UpdatedAt
@@ -166,8 +173,8 @@ ON CONFLICT(uid) DO UPDATE SET
         IEnumerable<string> sources,
         bool? useTmdbSchedule = null,
         int? tmdbRefreshHours = null,
-        int? endedRefreshDays = null,
-        string newSeasonMode = null)
+        string newSeasonMode = null,
+        bool? showNoticeSources = null)
     {
         uid = string.IsNullOrWhiteSpace(uid) ? null : uid.Trim();
         if (uid == null)
@@ -181,8 +188,8 @@ ON CONFLICT(uid) DO UPDATE SET
             current.Sources = sources?.ToList() ?? new List<string>();
             if (useTmdbSchedule.HasValue) current.UseTmdbSchedule = useTmdbSchedule.Value;
             if (tmdbRefreshHours.HasValue) current.TmdbRefreshHours = tmdbRefreshHours.Value;
-            if (endedRefreshDays.HasValue) current.EndedRefreshDays = endedRefreshDays.Value;
             if (!string.IsNullOrWhiteSpace(newSeasonMode)) current.NewSeasonMode = newSeasonMode;
+            if (showNoticeSources.HasValue) current.ShowNoticeSources = showNoticeSources.Value;
 
             Normalize(current, uid, true);
             SaveUnsafe(current);
@@ -223,16 +230,9 @@ ON CONFLICT(uid) DO UPDATE SET
                     ["168"] = "7 дней"
                 }
             },
-            endedRefreshDays = new
+            showNoticeSources = new
             {
-                defaultValue = 7,
-                values = new Dictionary<string, string>(StringComparer.Ordinal)
-                {
-                    ["7"] = "7 дней",
-                    ["14"] = "14 дней",
-                    ["30"] = "30 дней",
-                    ["60"] = "60 дней"
-                }
+                defaultValue = true
             },
             newSeasonMode = new
             {
