@@ -11,7 +11,6 @@
         cardSource: 'translationsub_card_source',
         smartTmdb: 'translationsub_tmdb_schedule',
         tmdbRefreshHours: 'translationsub_tmdb_refresh_hours',
-        endedRefreshDays: 'translationsub_tmdb_ended_days',
         newSeasonMode: 'translationsub_new_season_mode'
     };
 
@@ -190,12 +189,10 @@
         var interval = pick(settings, 'CheckIntervalHours', 'checkIntervalHours', null);
         var smart = pick(settings, 'UseTmdbSchedule', 'useTmdbSchedule', null);
         var tmdbHours = pick(settings, 'TmdbRefreshHours', 'tmdbRefreshHours', null);
-        var endedDays = pick(settings, 'EndedRefreshDays', 'endedRefreshDays', null);
         var seasonMode = pick(settings, 'NewSeasonMode', 'newSeasonMode', null);
         if (interval !== null) storageSet(KEYS.interval, String(interval));
         if (smart !== null) storageSet(KEYS.smartTmdb, triggerStorageValue(smart, false));
         if (tmdbHours !== null) storageSet(KEYS.tmdbRefreshHours, String(tmdbHours));
-        if (endedDays !== null) storageSet(KEYS.endedRefreshDays, String(endedDays));
         if (seasonMode !== null) storageSet(KEYS.newSeasonMode, String(seasonMode));
 
         availableItems.forEach(function (item) {
@@ -223,13 +220,11 @@
         var interval = intOrNull(KEYS.interval);
         var smart = boolOrNull(KEYS.smartTmdb);
         var tmdbHours = intOrNull(KEYS.tmdbRefreshHours);
-        var endedDays = intOrNull(KEYS.endedRefreshDays);
         var seasonMode = storageGet(KEYS.newSeasonMode, null);
 
         if (interval !== null) body.checkIntervalHours = interval;
         if (smart !== null) body.useTmdbSchedule = smart;
         if (tmdbHours !== null) body.tmdbRefreshHours = tmdbHours;
-        if (endedDays !== null) body.endedRefreshDays = endedDays;
         if (seasonMode !== null && seasonMode !== '') body.newSeasonMode = String(seasonMode);
         return body;
     }
@@ -403,12 +398,6 @@
                 KEYS.tmdbRefreshHours,
                 'Обновление расписания TMDB',
                 'Как часто перепроверять расписание активных сериалов.'
-            );
-            addServerSelect(
-                'endedRefreshDays',
-                KEYS.endedRefreshDays,
-                'Перепроверка завершённых сериалов',
-                'Как часто TMDB проверяется на неожиданное продолжение.'
             );
             addServerSelect(
                 'newSeasonMode',
