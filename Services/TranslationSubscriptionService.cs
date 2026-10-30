@@ -220,7 +220,8 @@ public static class TranslationSubscriptionService
                         {
                             Source = x.Source,
                             TranslationId = x.TranslationId,
-                            TranslationName = x.TranslationName
+                            TranslationName = x.TranslationName,
+                            LatestEpisode = Math.Max(0, x.LatestEpisode)
                         })
                         .ToList();
 
@@ -665,7 +666,9 @@ public static class TranslationSubscriptionService
                     {
                         Source = x.Source,
                         TranslationId = x.TranslationId,
-                        TranslationName = x.TranslationName
+                        TranslationName = x.TranslationName,
+                        // The next season has not been checked yet.
+                        LatestEpisode = 0
                     }).ToList() ?? new List<TranslationSubscriptionSource>(),
                     CreatedAt = now,
                     TmdbStatus = tmdb.Status,
