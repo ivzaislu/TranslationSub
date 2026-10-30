@@ -41,8 +41,14 @@
             try {
                 if (window.TranslationSubCardSource) {
                     var source = window.TranslationSubCardSource;
-                    if (directEnabled && typeof source.openNoticeOnline === 'function'
-                        && source.openNoticeOnline(item)) return;
+                    if (directEnabled && typeof source.openNoticeOnline === 'function') {
+                        try {
+                            if (source.openNoticeOnline(item)) return;
+                        } catch (e2) {
+                            // An experimental navigation failure must not
+                            // break the normal series-card route.
+                        }
+                    }
                     if (typeof source.open === 'function') {
                         source.open(item);
                         return;
