@@ -91,6 +91,24 @@ notice = rows[0]["display"].get("noticeSources") or ""
 assert "collaps" in notice.lower() and "hdvb" not in notice.lower(), notice
 assert "showNoticeSources" in settings["schema"], settings
 assert settings["schema"]["showNoticeSources"]["defaultValue"] is True, settings
+assert settings["schema"]["directNoticePlayback"]["defaultValue"] is False, settings
+assert snapshot["directNoticePlaybackEnabled"] is False, snapshot
+assert {x["source"]: x["latestEpisode"] for x in rows[0]["sources"]} == {
+    "collaps": 3, "hdvb": 2
+}, rows[0]
+
+# The option controls only navigation, not providers or episode tracking.
+direct_on = json_request(f"{base}/settings?uid={UID}",
+                         {"uid": UID, "directNoticePlayback": True})
+assert direct_on["settings"]["DirectNoticePlayback"] is True, direct_on
+snapshot_on = json_request(f"{base}/snapshot?uid={UID}")
+assert snapshot_on["directNoticePlaybackEnabled"] is True, snapshot_on
+assert json_request(f"{base}/settings?uid={UID}")["settings"]["DirectNoticePlayback"] is True
+direct_off = json_request(f"{base}/settings?uid={UID}",
+                          {"uid": UID, "directNoticePlayback": False})
+assert direct_off["settings"]["DirectNoticePlayback"] is False, direct_off
+assert json_request(f"{base}/snapshot?uid={UID}")["directNoticePlaybackEnabled"] is False
+print("PASS: direct-notice navigation is opt-in, server-persisted and independent of source data")
 print("PASS: notifications identify only the balancer hosting the newest episode")
 with sqlite3.connect("/tmp/lampac-translationsub-timecode/database/translationsub.db") as db:
     count = db.execute("select count(*) from subscriptions where uid = ?", (UID,)).fetchone()[0]
