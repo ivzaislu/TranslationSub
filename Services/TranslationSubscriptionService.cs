@@ -353,6 +353,9 @@ public static class TranslationSubscriptionService
 
     static bool ShouldRefreshTmdb(TranslationSubscription sub, TranslationUserSettings settings, DateTime now)
     {
+        // Terminal series are deleted, never scheduled for another TMDB poll.
+        if (IsEndedStatus(sub.TmdbStatus))
+            return false;
         if (!sub.TmdbLastSyncedAt.HasValue)
             return true;
 
@@ -366,10 +369,7 @@ public static class TranslationSubscriptionService
                 return true;
         }
 
-        bool ended = IsEndedStatus(sub.TmdbStatus);
-        TimeSpan interval = ended
-            ? TimeSpan.FromDays(Math.Max(1, settings.EndedRefreshDays))
-            : TimeSpan.FromHours(Math.Max(6, settings.TmdbRefreshHours));
+        TimeSpan interval = TimeSpan.FromHours(Math.Max(6, settings.TmdbRefreshHours));
         return now - sub.TmdbLastSyncedAt.Value >= interval;
     }
 
