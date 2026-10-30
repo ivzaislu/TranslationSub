@@ -79,11 +79,14 @@ public static class TranslationSubscriptionService
                         settingsCache[settingsKey] = settings;
                     }
 
-                    bool smartTmdb = settings.UseTmdbSchedule && sub.IsSerial
+                    bool hasTmdbIdentity = sub.IsSerial
                         && (IsTmdbId(sub.TmdbId) || IsImdbId(sub.ImdbId));
+                    bool smartTmdb = settings.UseTmdbSchedule && hasTmdbIdentity;
                     TmdbScheduleSnapshot tmdb = null;
 
-                    if (smartTmdb)
+                    // TMDB status checks remain active even when smart scheduling
+                    // is off: terminal series must still be automatically removed.
+                    if (hasTmdbIdentity)
                     {
                         string identityKey = TmdbCacheKey(sub);
                         if (!string.IsNullOrWhiteSpace(identityKey)
@@ -95,6 +98,8 @@ public static class TranslationSubscriptionService
                                 CopyTmdbState(sub, tmdb, settings, now);
                                 HandleNewSeason(sub, tmdb, settings, now);
                             }
+                            else
+                                UpdateStatusOnly(sub, tmdb);
                         }
                         else if (force || ShouldRefreshTmdb(sub, settings, now))
                         {
@@ -113,6 +118,8 @@ public static class TranslationSubscriptionService
                                     CopyTmdbState(sub, tmdb, settings, now);
                                     HandleNewSeason(sub, tmdb, settings, now);
                                 }
+                                else
+                                    UpdateStatusOnly(sub, tmdb);
                             }
                         }
 
@@ -319,12 +326,37 @@ public static class TranslationSubscriptionService
         return string.Empty;
     }
 
+    static void UpdateStatusOnly(TranslationSubscription sub, TmdbScheduleSnapshot tmdb)
+    {
+        string subscriptionId = sub.Id;
+        SubscriptionStore.Mutate(list =>
+        {
+            var current = list.FirstOrDefault(x => x.Id == subscriptionId);
+            if (current == null)
+                return;
+
+            current.TmdbStatus = tmdb.Status;
+            current.TmdbLastSyncedAt = tmdb.SyncedAt;
+            if (!string.IsNullOrWhiteSpace(tmdb.TmdbId))
+                current.TmdbId = tmdb.TmdbId;
+            if (!string.IsNullOrWhiteSpace(tmdb.ImdbId))
+                current.ImdbId = tmdb.ImdbId;
+        });
+
+        sub.TmdbStatus = tmdb.Status;
+        sub.TmdbLastSyncedAt = tmdb.SyncedAt;
+        if (!string.IsNullOrWhiteSpace(tmdb.TmdbId))
+            sub.TmdbId = tmdb.TmdbId;
+        if (!string.IsNullOrWhiteSpace(tmdb.ImdbId))
+            sub.ImdbId = tmdb.ImdbId;
+    }
+
     static bool ShouldRefreshTmdb(TranslationSubscription sub, TranslationUserSettings settings, DateTime now)
     {
         if (!sub.TmdbLastSyncedAt.HasValue)
             return true;
 
-        if (sub.TmdbNextAirDate.HasValue && sub.TmdbNextAirDate.Value.Date <= now.Date)
+        if (settings.UseTmdbSchedule && sub.TmdbNextAirDate.HasValue && sub.TmdbNextAirDate.Value.Date <= now.Date)
         {
             int lastSeason = sub.TmdbLastSeason.GetValueOrDefault(0);
             int lastEpisode = sub.TmdbLastEpisode.GetValueOrDefault(0);
