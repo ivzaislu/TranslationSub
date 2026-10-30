@@ -112,11 +112,12 @@ with sqlite3.connect("/tmp/lampac-translationsub-timecode/database/translationsu
 legacy_snapshot = json_request(f"{base}/snapshot?uid={UID}")
 legacy_row = next(x for x in legacy_snapshot["subscriptions"] if x["id"] == sub_id)
 assert not legacy_row["display"].get("noticeSources"), legacy_row
-with sqlite3.connect("/tmp/lampac-translationsub-timecode/database/translationsub.db") as db:
-    db.execute("UPDATE subscriptions SET sources_json = ? WHERE id = ?",
-               (saved_sources, sub_id))
-    db.commit()
-print("PASS: legacy subscription sources without episode counts do not produce false labels")
+rechecked = json_request(f"{base}/check?uid={UID}", {})
+assert rechecked["success"] is True, rechecked
+rechecked_row = next(x for x in rechecked["snapshot"]["subscriptions"] if x["id"] == sub_id)
+notice_after_check = rechecked_row["display"].get("noticeSources") or ""
+assert "collaps" in notice_after_check.lower() and "hdvb" not in notice_after_check.lower(), notice_after_check
+print("PASS: legacy subscriptions get accurate balancer labels after a successful poll")
 
 # Server controls the notice line; hiding it does not hide ordinary source metadata.
 disabled = json_request(f"{base}/settings?uid={UID}",
