@@ -18,7 +18,8 @@ public static class TranslationSubSnapshotService
     public static TranslationSubSnapshot Build(string uid, string profileId)
     {
         profileId = ProfileProgressStore.NormalizeProfileId(profileId);
-        bool showNoticeSources = TranslationSettingsStore.Get(uid).ShowNoticeSources;
+        var settings = TranslationSettingsStore.Get(uid);
+        bool showNoticeSources = settings.ShowNoticeSources;
         var sourceNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         if (showNoticeSources)
         {
@@ -51,6 +52,7 @@ public static class TranslationSubSnapshotService
         {
             GeneratedAt = DateTime.Now,
             ProfileId = profileId,
+            DirectNoticePlaybackEnabled = settings.DirectNoticePlayback,
             Badge = new TranslationSubBadgeSnapshot
             {
                 Count = updates.Count
@@ -86,7 +88,8 @@ public static class TranslationSubSnapshotService
             {
                 Source = x.Source,
                 TranslationId = x.TranslationId,
-                TranslationName = x.TranslationName
+                TranslationName = x.TranslationName,
+                LatestEpisode = Math.Max(0, x.LatestEpisode)
             })
             .ToList();
 
