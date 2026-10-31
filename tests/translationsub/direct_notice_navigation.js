@@ -326,6 +326,8 @@ function makeFocusClient() {
     let toggles = 0;
     let explicitFocus = 0;
     let lastForce = null;
+    let currentRow = { row: true };
+    let componentStarts = 0;
 
     test.context.setTimeout = callback => { pending.push(callback); };
     Lampa.Activity.active = () => test.activities[test.activities.length - 1];
@@ -349,6 +351,9 @@ function makeFocusClient() {
         push(activity);
         if (activity.component === 'lampac') {
             activity.activity = {
+                component: {
+                    start() { componentStarts++; }
+                },
                 render() {
                     return {
                         find(selector) {
@@ -357,7 +362,7 @@ function makeFocusClient() {
                             if (selector === '.online-prestige--full.selector.focus, .online-prestige--folder.selector.focus')
                                 return { length: focusedRow ? 1 : 0 };
                             if (selector === '.online-prestige--full.selector, .online-prestige--folder.selector')
-                                return hasRows ? { length: 3, 0: { row: true } } : { length: 0 };
+                                return hasRows ? { length: 3, 0: currentRow } : { length: 0 };
                             return { length: 0 };
                         }
                     };
@@ -374,6 +379,10 @@ function makeFocusClient() {
             pending.shift()();
         },
         ready() { hasRows = true; },
+        redraw() {
+            currentRow = { row: true };
+            focusedRow = false;
+        },
         focus() { focusedRow = true; },
         unfocus() { focusedRow = false; },
         stalePoster() { stalePosterFocus = true; },
@@ -381,6 +390,7 @@ function makeFocusClient() {
         setModal(value) { modalOpen = value; },
         toggles() { return toggles; },
         focusCalls() { return explicitFocus; },
+        componentStarts() { return componentStarts; },
         forced() { return lastForce; }
     };
 }
@@ -399,8 +409,9 @@ function makeFocusClient() {
     tv.next(); // async results become selectable
     assert.equal(tv.toggles(), 1);
     assert.equal(tv.focusCalls(), 1, 'explicitly focus an actual Online episode');
+    assert.equal(tv.componentStarts(), 1, 're-register current Lampac controller, not stale content');
     assert.equal(tv.forced(), true);
-    assert.equal(tv.pending.length, 0);
+    assert.ok(tv.pending.length > 0, 'watch for later async episode-list redraws');
     console.log('PASS: TV and keyboard focus moves to the loaded Online episode list');
 }
 
@@ -424,8 +435,9 @@ function makeFocusClient() {
     tv.ready();
     tv.focus();
     tv.next();
-    assert.equal(tv.toggles(), 0, 'do not change genuine existing episode focus');
-    console.log('PASS: existing episode focus is preserved');
+    assert.equal(tv.toggles(), 1, 'rebuild Navigator even if a stale focus class is present');
+    assert.equal(tv.focusCalls(), 1);
+    console.log('PASS: apparent episode focus still gets its Navigator controller rebuilt');
 }
 
 {
@@ -480,6 +492,21 @@ function makeFocusClient() {
     tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
     tv.next();
     tv.ready();
+    tv.next();
+    assert.equal(tv.componentStarts(), 1);
+    tv.redraw(); // Lampac clears and rebuilds the selectable episode elements
+    tv.next();
+    assert.equal(tv.componentStarts(), 2,
+        're-register the Online controller after asynchronous list replacement');
+    assert.equal(tv.focusCalls(), 2);
+    console.log('PASS: late Online rerender restores keyboard and remote selection');
+}
+
+{
+    const tv = makeFocusClient();
+    tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
+    tv.next();
+    tv.ready();
     // Lampac may switch balancers using Activity.replace(), producing a
     // *different* activity object with the same direct-notice flag.
     const oldOnline = tv.activities.pop();
@@ -503,6 +530,8 @@ function makeFocusClient() {
     tv.ready();
     tv.next();
     assert.equal(tv.toggles(), 1);
+    // Let the first activity's short redraw-monitoring window expire.
+    for (let i = 0; i < 25 && tv.pending.length; i++) tv.next();
     tv.activities.pop();
     tv.activities.pop();
     tv.unfocus();
