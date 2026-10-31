@@ -220,7 +220,10 @@
 
             try {
                 if (window.TranslationSubNotice && typeof window.TranslationSubNotice.open === 'function') {
-                    window.TranslationSubNotice.open(updates);
+                    window.TranslationSubNotice.open(
+                        updates,
+                        !!(state.snapshot && state.snapshot.directNoticePlaybackEnabled)
+                    );
                     return;
                 }
             } catch (e) {}

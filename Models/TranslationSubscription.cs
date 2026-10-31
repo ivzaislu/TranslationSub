@@ -49,4 +49,6 @@ public class TranslationSubscriptionSource
     public string Source { get; set; }
     public string TranslationId { get; set; }
     public string TranslationName { get; set; }
+    // Zero means unknown (for subscriptions created before this field existed).
+    public int LatestEpisode { get; set; }
 }
