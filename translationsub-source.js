@@ -82,10 +82,10 @@
         });
     }
 
-    // In Lampa the Online activity is started before Lampac has populated
-    // the episode list. Also, a stale .focus class on the poster/header does
-    // not mean a playable row belongs to the current Navigator collection.
-    // Follow this activity through Lampac's Activity.replace() transitions.
+    // Reattach remote/keyboard navigation to the *current* Lampac activity.
+    // A .focus class alone is not reliable: Lampa keeps the active controller,
+    // Navigator collection and selected node separately. Lampac can also clear
+    // and redraw its episode list after the first network response.
     function focusOnlineAfterLoad(onlineActivity) {
         if (!window.Lampa || !Lampa.Controller
             || typeof Lampa.Controller.toggle !== 'function'
@@ -95,6 +95,8 @@
 
         var sequence = ++focusRecoverySeq;
         var attempts = 0;
+        var focusedRows = null;
+        var stableFrames = 0;
 
         function checkFocus() {
             if (sequence !== focusRecoverySeq) return;
@@ -105,9 +107,9 @@
                 var enabled = Lampa.Controller.enabled();
                 if (!enabled) return;
 
-                // Do not take focus away from a user-opened menu, modal,
-                // poster, header or player. A leftover full_start controller
-                // from an earlier card may be recovered, however.
+                // Never interrupt a real menu, player, modal, or user-chosen
+                // navigation area. Legacy full-card controllers can be left
+                // active by asynchronous navigation and are safe to replace.
                 if (enabled.name !== 'content'
                     && enabled.name !== 'full_start'
                     && enabled.name !== 'full_descr'
@@ -115,36 +117,49 @@
                 if (typeof Lampa.Controller.windowTop === 'function'
                     && Lampa.Controller.windowTop()) return;
 
-                var view = onlineActivity.activity && onlineActivity.activity.render
-                    ? onlineActivity.activity.render() : null;
+                var slide = onlineActivity.activity;
+                var view = slide && typeof slide.render === 'function' ? slide.render() : null;
                 if (view && typeof view.find === 'function') {
                     var rows = view.find('.online-prestige--full.selector, .online-prestige--folder.selector');
+                    var row = rows && rows.length ? rows[0] : null;
 
-                    // Only a focused episode row counts. Old .focus classes
-                    // on the explorer poster/filter must not suppress repair.
-                    if (view.find('.online-prestige--full.selector.focus, .online-prestige--folder.selector.focus').length)
-                        return;
+                    // Do not focus an element while the slide is hidden.
+                    if (row && row.offsetParent !== null) {
+                        var changed = !focusedRows || focusedRows !== row;
+                        if (changed) {
+                            // Re-register the *Lampac* content controller.
+                            // A blind Controller.toggle('content') can enable
+                            // the previous screen's controller after repeated
+                            // navigations and leave the keyboard unusable.
+                            var component = slide.component;
+                            if (component && typeof component.start === 'function')
+                                component.start();
 
-                    if (rows.length) {
-                        // The native Lampac controller populates its Navigator
-                        // collection on toggle. Then point focus explicitly
-                        // at an episode in that newly populated collection.
-                        Lampa.Controller.toggle('content', true);
-                        if (typeof Lampa.Controller.collectionFocus === 'function') {
-                            var row = rows[0];
-                            if (row) Lampa.Controller.collectionFocus(row, view);
+                            Lampa.Controller.toggle('content', true);
+
+                            // Lampa's native focus call updates select_active
+                            // (used by OK), not just the CSS .focus class.
+                            var focused = view.find('.online-prestige--full.selector.focus, .online-prestige--folder.selector.focus');
+                            var target = focused && focused.length ? focused[0] : row;
+                            if (typeof Lampa.Controller.collectionFocus === 'function')
+                                Lampa.Controller.collectionFocus(target, view);
+
+                            focusedRows = row;
+                            stableFrames = 0;
+                        } else {
+                            stableFrames++;
                         }
-                        return;
                     }
                 }
             } catch (e) {
-                return;
+                // The Online component may still be building its view.
+                // Retry while the activity is alive instead of aborting.
             }
 
-            // Balancer discovery can take 15s followed by a slow provider
-            // response. Stop after a bounded window, or when the activity
-            // was replaced or the user navigated elsewhere.
-            if (++attempts < 180) setTimeout(checkFocus, 500);
+            // Keep watching briefly after first focus: async requests may
+            // replace the episode nodes and invalidate Navigator's collection.
+            if (++attempts < 180 && (!focusedRows || stableFrames < 20))
+                setTimeout(checkFocus, 500);
         }
 
         setTimeout(checkFocus, 250);
