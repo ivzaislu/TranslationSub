@@ -80,6 +80,50 @@
         });
     }
 
+    // Lampac creates its content controller before the asynchronous Online
+    // episode list has any selectable rows. On a TV its first collectionFocus
+    // can therefore select nothing. Restore focus *once* when real rows arrive,
+    // and only while this exact Online activity still owns the content view.
+    function focusOnlineAfterLoad(onlineActivity) {
+        if (!window.Lampa || !Lampa.Platform || typeof Lampa.Platform.screen !== 'function'
+            || !Lampa.Platform.screen('tv')
+            || !Lampa.Controller || typeof Lampa.Controller.toggle !== 'function'
+            || typeof Lampa.Controller.enabled !== 'function'
+            || !Lampa.Activity || typeof Lampa.Activity.active !== 'function')
+            return;
+
+        var attempts = 0;
+        function checkFocus() {
+            try {
+                // Never steal the remote from a new screen, menu, filter or
+                // player opened by the user while network requests complete.
+                if (Lampa.Activity.active() !== onlineActivity) return;
+                var enabled = Lampa.Controller.enabled();
+                if (!enabled || enabled.name !== 'content') return;
+
+                var view = onlineActivity.activity && onlineActivity.activity.render
+                    ? onlineActivity.activity.render() : null;
+                if (view && typeof view.find === 'function') {
+                    if (view.find('.selector.focus').length) return;
+
+                    // The header/poster exists before any Online results.
+                    // Wait for actual playable rows rather than focusing early.
+                    if (view.find('.online-prestige--full.selector, .online-prestige--folder.selector').length) {
+                        // Forced toggle avoids a stale windowRedirect after
+                        // closing the notification modal on TV.
+                        Lampa.Controller.toggle('content', true);
+                        return;
+                    }
+                }
+            } catch (e) {
+                return;
+            }
+
+            if (++attempts < 60) setTimeout(checkFocus, 250);
+        }
+        setTimeout(checkFocus, 250);
+    }
+
     function openOnBalancer(item, entry, hooks) {
         if (!window.lampac_plugin || !window.Lampa || !Lampa.Activity
             || typeof Lampa.Activity.push !== 'function'
@@ -165,6 +209,7 @@
                     Lampa.Activity.push(seriesCard);
                     cardAdded = true;
                     Lampa.Activity.push(activity);
+                    focusOnlineAfterLoad(activity);
                 } catch (e) {
                     // If Online fails after inserting the card, leave that
                     // already-open card visible (no duplicate fallback push).
