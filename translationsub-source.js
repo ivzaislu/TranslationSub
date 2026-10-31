@@ -119,7 +119,10 @@
                 return;
             }
 
-            if (++attempts < 60) setTimeout(checkFocus, 250);
+            // Lampac may spend up to 15 seconds discovering a provider,
+            // followed by a slow Online response. Keep trying while this
+            // exact activity owns content, but never poll indefinitely.
+            if (++attempts < 180) setTimeout(checkFocus, 500);
         }
         setTimeout(checkFocus, 250);
     }
