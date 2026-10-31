@@ -130,6 +130,12 @@
             ['push', 'replace', 'back', 'backward'].forEach(function (name) {
                 instrument(Lampa.Activity, name, 'Activity.' + name);
             });
+            var navigator = window.Navigator || Lampa.Navigator;
+            if (navigator) {
+                ['setCollection', 'focus', 'move', 'multiAdd'].forEach(function (name) {
+                    instrument(navigator, name, 'Navigator.' + name);
+                });
+            }
 
             if (Lampa.Listener && typeof Lampa.Listener.follow === 'function') {
                 activityListener = function (event) {
