@@ -9,6 +9,187 @@
     var focusListenerInstalled = false;
     var focusRecoverySeq = 0;
 
+    // Opt-in tracing for the intermittent Lampa keyboard/remote focus loss.
+    // This does NOT repair or change navigation: it only records which core
+    // method last changed the controller or its Navigator collection.
+    // Enable from the browser console: TranslationSubFocusTrace.start()
+    // Reproduce twice, then: copy(TranslationSubFocusTrace.report())
+    function createFocusTrace() {
+        var active = false;
+        var records = [];
+        var restorers = [];
+        var startedAt = 0;
+        var sampler = null;
+        var lastState = '';
+        var activityListener = null;
+        var keyListener = null;
+        var MAX = 400;
+
+        function state() {
+            var result = { activity: '', controller: '', window: '', rows: 0,
+                rowFocus: 0, focus: 0, collection: null };
+            try {
+                var a = Lampa.Activity && Lampa.Activity.active && Lampa.Activity.active();
+                result.activity = a && a.component || '';
+                if (a && a.activity && typeof a.activity.render === 'function') {
+                    var view = a.activity.render();
+                    if (view && typeof view.find === 'function') {
+                        result.rows = view.find('.online-prestige--full.selector, .online-prestige--folder.selector').length;
+                        result.rowFocus = view.find('.online-prestige--full.selector.focus, .online-prestige--folder.selector.focus').length;
+                        result.focus = view.find('.selector.focus').length;
+                    }
+                }
+                var c = Lampa.Controller && Lampa.Controller.enabled && Lampa.Controller.enabled();
+                result.controller = c && c.name || '';
+                var w = Lampa.Controller && Lampa.Controller.windowTop && Lampa.Controller.windowTop();
+                result.window = w && w.name || '';
+                var nav = window.Navigator || (Lampa && Lampa.Navigator);
+                if (nav && nav._collection) result.collection = nav._collection.length;
+            } catch (e) {}
+            return result;
+        }
+
+        function push(type, detail, before, after, caller) {
+            if (!active) return;
+            records.push({
+                ms: Date.now() - startedAt,
+                event: type,
+                detail: detail || '',
+                before: before || null,
+                after: after || state(),
+                caller: caller || ''
+            });
+            if (records.length > MAX) records.shift();
+        }
+
+        function caller() {
+            try {
+                var stack = String((new Error()).stack || '').split('\n').slice(3, 7);
+                return stack.map(function (line) {
+                    // Keep only source filenames and line numbers: never log
+                    // document URLs, query strings, movie names, or tokens.
+                    var match = line.match(/([A-Za-z0-9_.-]+\\.js):(\\d+):(\\d+)/);
+                    return match ? match[1] + ':' + match[2] : 'unknown';
+                }).join(' > ');
+            } catch (e) { return ''; }
+        }
+
+        function details(label, args) {
+            if (label === 'Controller.add' || label === 'Controller.toggle'
+                || label === 'Controller.move' || label === 'Controller.trigger')
+                return String(args[0] || '').slice(0, 50);
+            if (label === 'Activity.push') return String(args[0] && args[0].component || '');
+            if (label === 'Activity.replace') return 'activity-replaced';
+            if (label === 'Controller.collectionSet') return 'set-collection';
+            if (label === 'Controller.collectionFocus') return 'focus-element';
+            return '';
+        }
+
+        function instrument(object, name, label) {
+            if (!object || typeof object[name] !== 'function') return;
+            var original = object[name];
+            var patched = function () {
+                var args = Array.prototype.slice.call(arguments);
+                var before = state();
+                var origin = caller();
+                try {
+                    return original.apply(this, args);
+                } finally {
+                    push(label, details(label, args), before, state(), origin);
+                }
+            };
+            object[name] = patched;
+            restorers.push(function () {
+                if (object[name] === patched) object[name] = original;
+            });
+        }
+
+        function recordState() {
+            if (!active) return;
+            var now = state();
+            var signature = JSON.stringify(now);
+            if (signature !== lastState) {
+                lastState = signature;
+                push('state-change', '', null, now, '');
+            }
+        }
+
+        function startTrace() {
+            if (active) return 'Focus trace is already running';
+            if (!window.Lampa || !Lampa.Controller || !Lampa.Activity)
+                return 'Lampa is not ready';
+            records = [];
+            startedAt = Date.now();
+            lastState = '';
+            active = true;
+
+            ['add', 'toggle', 'clear', 'collectionSet', 'collectionFocus',
+                'collectionAppend', 'focus', 'move', 'enter', 'back'].forEach(function (name) {
+                instrument(Lampa.Controller, name, 'Controller.' + name);
+            });
+            ['push', 'replace', 'back', 'backward'].forEach(function (name) {
+                instrument(Lampa.Activity, name, 'Activity.' + name);
+            });
+
+            if (Lampa.Listener && typeof Lampa.Listener.follow === 'function') {
+                activityListener = function (event) {
+                    if (event && event.component)
+                        push('activity-event', String(event.type || '') + ':' +
+                            String(event.component).slice(0, 30));
+                };
+                Lampa.Listener.follow('activity', activityListener);
+            }
+
+            if (typeof document !== 'undefined' && document.addEventListener) {
+                keyListener = function (event) {
+                    var code = event.keyCode || event.which;
+                    if ([13, 27, 37, 38, 39, 40, 8].indexOf(code) !== -1)
+                        push('keydown', String(code));
+                };
+                document.addEventListener('keydown', keyListener, true);
+            }
+
+            recordState();
+            if (typeof setInterval === 'function') sampler = setInterval(recordState, 300);
+            return 'Focus trace recording. Reproduce the failure, then copy(TranslationSubFocusTrace.report()).';
+        }
+
+        function stopTrace() {
+            if (!active) return 'Focus trace stopped';
+            push('trace-stop');
+            active = false;
+            if (sampler) clearInterval(sampler);
+            sampler = null;
+            while (restorers.length) restorers.pop()();
+            if (activityListener && Lampa.Listener && Lampa.Listener.remove)
+                Lampa.Listener.remove('activity', activityListener);
+            activityListener = null;
+            if (keyListener && typeof document !== 'undefined' && document.removeEventListener)
+                document.removeEventListener('keydown', keyListener, true);
+            keyListener = null;
+            return 'Focus trace stopped; report() still works';
+        }
+
+        return {
+            version: 'focus-diagnostic-1',
+            start: startTrace,
+            stop: stopTrace,
+            clear: function () { records = []; lastState = ''; },
+            status: function () {
+                return { active: active, events: records.length, version: 'focus-diagnostic-1' };
+            },
+            report: function () {
+                if (active) recordState();
+                return JSON.stringify({
+                    version: 'focus-diagnostic-1', active: active,
+                    current: state(), events: records
+                }, null, 2);
+            }
+        };
+    }
+
+    window.TranslationSubFocusTrace = createFocusTrace();
+
     function storageGet(name, fallback) {
         try {
             if (window.Lampa && Lampa.Storage && typeof Lampa.Storage.get === 'function')
