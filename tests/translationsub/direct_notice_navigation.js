@@ -34,6 +34,11 @@ function makeClient() {
             follow(name, callback) {
                 if (name === 'activity') activityListeners.push(callback);
             },
+            remove(name, callback) {
+                if (name !== 'activity') return;
+                const index = activityListeners.indexOf(callback);
+                if (index >= 0) activityListeners.splice(index, 1);
+            },
             send(name, event) {
                 if (name === 'activity') activityListeners.slice().forEach(fn => fn(event));
             }
@@ -541,6 +546,66 @@ function makeFocusClient() {
     assert.equal(tv.toggles(), 2, 'every new direct transition must restore focus independently');
     assert.equal(tv.focusCalls(), 2);
     console.log('PASS: repeated notification transitions restore focus');
+}
+
+
+// Opt-in diagnostics must observe the real controller/Navigator transitions,
+// but never alter the normal navigation when recording is switched off.
+{
+    const { client } = makeClient();
+    const navigator = {
+        _collection: [],
+        setCollection(rows) { this._collection = rows; },
+        focus() {},
+        move() {}
+    };
+    client.Navigator = navigator;
+    let controllerName = 'head';
+    const controller = {
+        enabled() { return { name: controllerName }; },
+        windowTop() { return false; },
+        toggle(name) { controllerName = name; },
+        clear() { navigator.setCollection([]); },
+        collectionSet(rows) { navigator.setCollection(rows); },
+        collectionFocus() {}
+    };
+    client.Lampa.Controller = controller;
+    client.Lampa.Activity.active = () => null;
+    const toggleBefore = controller.toggle;
+    const setCollectionBefore = navigator.setCollection;
+    const trace = client.TranslationSubFocusTrace;
+
+    assert.equal(trace.version, 'focus-diagnostic-1');
+    assert.equal(trace.status().active, false);
+    assert.match(trace.start(), /recording/);
+    assert.equal(trace.status().active, true);
+    assert.match(trace.start(), /already running/, 'do not install duplicate hooks');
+
+    controller.toggle('content', true);
+    controller.collectionSet([{ className: 'selector focus' }]);
+    navigator.focus({});
+    controller.clear();
+    client.Lampa.Activity.push({ component: 'main', title: 'PRIVATE MOVIE TITLE' });
+
+    const report = JSON.parse(trace.report());
+    assert.equal(report.version, 'focus-diagnostic-1');
+    assert.ok(report.events.some(e => e.event === 'Controller.toggle'
+        && e.before.controller === 'head' && e.after.controller === 'content'));
+    assert.ok(report.events.some(e => e.event === 'Controller.clear'
+        && e.after.collection === 0));
+    assert.ok(report.events.some(e => e.event === 'Navigator.setCollection'));
+    assert.ok(report.events.some(e => e.event === 'Navigator.focus'));
+    assert.ok(report.events.some(e => e.event === 'Activity.push'));
+    assert.equal(trace.report().includes('PRIVATE MOVIE TITLE'), false,
+        'focus trace must not expose movie titles');
+
+    assert.match(trace.stop(), /stopped/);
+    assert.equal(trace.status().active, false);
+    assert.equal(controller.toggle, toggleBefore, 'stop must restore original Lampa methods');
+    assert.equal(navigator.setCollection, setCollectionBefore);
+    assert.equal(JSON.parse(trace.report()).events.length, report.events.length + 1,
+        'trace remains readable after stopping');
+    console.log('PASS: opt-in focus diagnostic captures controller/Navigator culprit and restores hooks');
 }
 
 new vm.Script(source);
