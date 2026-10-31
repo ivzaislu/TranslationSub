@@ -18,8 +18,27 @@ public static class TranslationSubSnapshotService
     public static TranslationSubSnapshot Build(string uid, string profileId)
     {
         profileId = ProfileProgressStore.NormalizeProfileId(profileId);
+        var settings = TranslationSettingsStore.Get(uid);
+        bool showNoticeSources = settings.ShowNoticeSources;
+        var sourceNames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        if (showNoticeSources)
+        {
+            try
+            {
+                foreach (var source in LampacSourceRegistry.AvailableSources())
+                {
+                    if (!string.IsNullOrWhiteSpace(source.id))
+                        sourceNames[source.id] = source.name;
+                }
+            }
+            catch
+            {
+                // Source IDs are usable labels if registry metadata is unavailable.
+            }
+        }
+
         var subscriptions = TranslationSubProjectionService.ForProfile(uid, profileId)
-            .Select(ToSnapshot)
+            .Select(x => ToSnapshot(x, showNoticeSources, sourceNames))
             .OrderByDescending(x => x.HasNewEpisodes)
             .ThenBy(x => x.Title ?? string.Empty, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.TranslationName ?? string.Empty, StringComparer.OrdinalIgnoreCase)
@@ -33,6 +52,7 @@ public static class TranslationSubSnapshotService
         {
             GeneratedAt = DateTime.Now,
             ProfileId = profileId,
+            DirectNoticePlaybackEnabled = settings.DirectNoticePlayback,
             Badge = new TranslationSubBadgeSnapshot
             {
                 Count = updates.Count
@@ -42,7 +62,10 @@ public static class TranslationSubSnapshotService
         };
     }
 
-    static TranslationSubSubscriptionSnapshot ToSnapshot(TranslationSubProfileProjection projection)
+    static TranslationSubSubscriptionSnapshot ToSnapshot(
+        TranslationSubProfileProjection projection,
+        bool showNoticeSources,
+        IReadOnlyDictionary<string, string> sourceNames)
     {
         var sub = projection?.Subscription;
         if (sub == null)
@@ -65,7 +88,8 @@ public static class TranslationSubSnapshotService
             {
                 Source = x.Source,
                 TranslationId = x.TranslationId,
-                TranslationName = x.TranslationName
+                TranslationName = x.TranslationName,
+                LatestEpisode = Math.Max(0, x.LatestEpisode)
             })
             .ToList();
 
@@ -118,7 +142,9 @@ public static class TranslationSubSnapshotService
                 from,
                 to,
                 newCount,
-                sources)
+                sources,
+                showNoticeSources,
+                sourceNames)
         };
     }
 
@@ -154,7 +180,9 @@ public static class TranslationSubSnapshotService
         int from,
         int to,
         int newCount,
-        List<TranslationSubSourceSnapshot> sources)
+        List<TranslationSubSourceSnapshot> sources,
+        bool showNoticeSources,
+        IReadOnlyDictionary<string, string> sourceNames)
     {
         var labels = (sources ?? new List<TranslationSubSourceSnapshot>())
             .Select(x => (x?.Source ?? string.Empty).Trim())
@@ -164,6 +192,27 @@ public static class TranslationSubSnapshotService
 
         if (labels.Count == 0 && !string.IsNullOrWhiteSpace(sub?.Source))
             labels.Add(sub.Source.Trim());
+
+        // Only name providers known to have the newest available episode.
+        // Legacy sources_json entries do not contain LatestEpisode (zero), so
+        // never claim their availability until the next successful poll.
+        var noticeProviders = showNoticeSources && hasNew && available > 0
+            ? (sub.Sources ?? new List<TranslationSubscriptionSource>())
+                .Where(x => x != null && x.LatestEpisode >= available
+                    && !string.IsNullOrWhiteSpace(x.Source))
+                .Select(x => sourceNames != null && sourceNames.TryGetValue(x.Source, out var displayName)
+                    && !string.IsNullOrWhiteSpace(displayName)
+                    ? displayName.Trim()
+                    : x.Source.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : new List<string>();
+
+        string noticeSources = noticeProviders.Count == 0
+            ? null
+            : (noticeProviders.Count == 1 ? "Балансер: " : "Балансеры: ")
+                + string.Join(", ", noticeProviders);
 
         string progress = hasNew
             ? "Можно смотреть E" + from + (to > from ? "–E" + to : string.Empty)
@@ -197,6 +246,7 @@ public static class TranslationSubSnapshotService
             Progress = progress,
             Source = string.Join(", ", labels),
             SourceLabels = labels,
+            NoticeSources = noticeSources,
             NewBadge = newCount > 0 ? newCount + " НОВЫХ" : null,
             NoticeTime = newCount > 0 ? newCount + " новых" : "S" + season,
             NoticeRange = hasNew

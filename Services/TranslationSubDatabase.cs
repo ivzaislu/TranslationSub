@@ -98,6 +98,8 @@ CREATE TABLE IF NOT EXISTS settings (
     tmdb_refresh_hours INTEGER NOT NULL,
     ended_refresh_days INTEGER NOT NULL,
     new_season_mode TEXT NOT NULL,
+    show_notice_sources INTEGER NOT NULL DEFAULT 1,
+    notice_direct_playback INTEGER NOT NULL DEFAULT 0,
     updated_at TEXT NOT NULL
 );
 
@@ -149,6 +151,50 @@ CREATE INDEX IF NOT EXISTS idx_translationsub_profile_progress_subscription
     ON profile_progress(subscription_id);
 ";
                 command.ExecuteNonQuery();
+
+                // Existing installations lack this column. SQLite keeps the
+                // default for older rows without rebuilding the settings table.
+                bool hasShowNoticeSources = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(settings);";
+                    using var columns = check.ExecuteReader();
+                    while (columns.Read())
+                    {
+                        if (string.Equals(columns.GetString(1), "show_notice_sources", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasShowNoticeSources = true;
+                            break;
+                        }
+                    }
+                }
+                if (!hasShowNoticeSources)
+                {
+                    using var migration = connection.CreateCommand();
+                    migration.CommandText = "ALTER TABLE settings ADD COLUMN show_notice_sources INTEGER NOT NULL DEFAULT 1;";
+                    migration.ExecuteNonQuery();
+                }
+
+                bool hasNoticeDirectPlayback = false;
+                using (var check = connection.CreateCommand())
+                {
+                    check.CommandText = "PRAGMA table_info(settings);";
+                    using var columns = check.ExecuteReader();
+                    while (columns.Read())
+                    {
+                        if (string.Equals(columns.GetString(1), "notice_direct_playback", StringComparison.OrdinalIgnoreCase))
+                        {
+                            hasNoticeDirectPlayback = true;
+                            break;
+                        }
+                    }
+                }
+                if (!hasNoticeDirectPlayback)
+                {
+                    using var migration = connection.CreateCommand();
+                    migration.CommandText = "ALTER TABLE settings ADD COLUMN notice_direct_playback INTEGER NOT NULL DEFAULT 0;";
+                    migration.ExecuteNonQuery();
+                }
             }
 
             initialized = true;

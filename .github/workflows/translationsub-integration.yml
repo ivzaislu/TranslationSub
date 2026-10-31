@@ -78,6 +78,24 @@ jobs:
           test -f /tmp/lampac-translationsub-timecode/module/TranslationSub/manifest.json
           test -f /tmp/lampac-translationsub-timecode/module/Sync/TimeCode/manifest.json
 
+      - name: Verify direct notice client navigation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/translationsub/direct_notice_navigation.js
+
+      - name: Verify activity-scoped focus restoration
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/translationsub/controller_restore.js
+
+      - name: Verify repeated subscription-page focus transitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/translationsub/focus_controller_regression.js
+
       - name: Verify TimeCode compatibility contract
         shell: bash
         run: |
@@ -285,6 +303,12 @@ jobs:
         run: |
           set -euo pipefail
           python3 tests/translationsub/external_integration.py
+
+      - name: Verify terminal-series auto-unsubscribe and TimeCode preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/translationsub/terminal_cleanup.py
 
       - name: Diagnostic tail
         if: failure()

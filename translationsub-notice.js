@@ -35,17 +35,54 @@
         }, 0);
     }
 
-    function openUpdate(item, previousController) {
-        closeAndRestore(previousController);
-        setTimeout(function () {
-            try {
-                if (window.TranslationSubCardSource && typeof window.TranslationSubCardSource.open === 'function') {
-                    window.TranslationSubCardSource.open(item);
-                    return;
-                }
-            } catch (e) {}
-            openSubscriptionsPage();
-        }, 0);
+    function openUpdate(item, previousController, directEnabled) {
+        var closed = false;
+
+        function closeOnce(restorePreviousController) {
+            if (closed) return;
+            closed = true;
+            if (restorePreviousController) closeAndRestore(previousController);
+            else {
+                // Direct Online navigation immediately installs its own
+                // content controller. Do not schedule restoration of the old
+                // notification controller: it can steal remote focus on TV.
+                try {
+                    if (Lampa.Modal && typeof Lampa.Modal.close === 'function')
+                        Lampa.Modal.close();
+                } catch (e) {}
+            }
+        }
+
+        function openSeriesCard() {
+            closeOnce(true);
+            setTimeout(function () {
+                try {
+                    var source = window.TranslationSubCardSource;
+                    if (source && typeof source.open === 'function') {
+                        source.open(item);
+                        return;
+                    }
+                } catch (e) {}
+                openSubscriptionsPage();
+            }, 0);
+        }
+
+        // Keep the notification drawer behind the standard Lampa Select
+        // chooser. Pressing Back on the remote then returns to the *same*
+        // focused notification instead of dropping the user at the home page.
+        try {
+            var source = window.TranslationSubCardSource;
+            if (directEnabled && source && typeof source.openNoticeOnline === 'function') {
+                if (source.openNoticeOnline(item, {
+                    beforeNavigate: function () { closeOnce(false); },
+                    onFailure: openSeriesCard
+                })) return;
+            }
+        } catch (e) {
+            // Missing Online integration: retain the ordinary card route.
+        }
+
+        openSeriesCard();
     }
 
     function noticeCard(item, index) {
@@ -71,6 +108,7 @@
         descr.empty();
         descr.append($('<div></div>').text(voice));
         if (display.noticeRange) descr.append($('<div></div>').text(String(display.noticeRange)));
+        if (display.noticeSources) descr.append($('<div></div>').text(String(display.noticeSources)));
 
         var img = card.find('.notice__img img').first();
         if (poster && img.length) {
@@ -107,7 +145,7 @@
         return item;
     }
 
-    function renderDrawer(updates, previousController) {
+    function renderDrawer(updates, previousController, directEnabled) {
         updates = Array.isArray(updates) ? updates : [];
 
         var html = $('<div class="translationsub-notice"></div>');
@@ -131,7 +169,7 @@
                     var node = $(selected);
                     var index = parseInt(node.attr('data-translationsub-update'), 10);
                     if (isNaN(index) || !updates[index]) return;
-                    openUpdate(updates[index], previousController);
+                    openUpdate(updates[index], previousController, directEnabled);
                 },
                 onBack: function () { closeAndRestore(previousController); }
             });
@@ -140,14 +178,14 @@
         }
     }
 
-    function openDrawer(preloadedUpdates) {
+    function openDrawer(preloadedUpdates, directEnabled) {
         if (!window.Lampa || !Lampa.Modal || typeof Lampa.Modal.open !== 'function') {
             openSubscriptionsPage();
             return;
         }
 
         var previousController = window.TranslationSubRuntime.controllerName('head');
-        renderDrawer(Array.isArray(preloadedUpdates) ? preloadedUpdates : [], previousController);
+        renderDrawer(Array.isArray(preloadedUpdates) ? preloadedUpdates : [], previousController, !!directEnabled);
     }
 
     function start() {

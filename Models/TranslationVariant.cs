@@ -18,6 +18,7 @@ public class TranslationVariantSource
     public string Source { get; set; }
     public string TranslationId { get; set; }
     public string TranslationName { get; set; }
+    public int LatestEpisode { get; set; }
 }
 
 public class TranslationVariantsResponse
