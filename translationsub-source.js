@@ -41,8 +41,13 @@
                 }
                 var c = Lampa.Controller && Lampa.Controller.enabled && Lampa.Controller.enabled();
                 result.controller = c && c.name || '';
-                var w = Lampa.Controller && Lampa.Controller.windowTop && Lampa.Controller.windowTop();
-                result.window = w && w.name || '';
+                // windowTop() mutates Lampa's internal window stack.
+                // Observe DOM flags instead so tracing cannot fix/hide the bug.
+                if (typeof document !== 'undefined' && document.body) {
+                    if (document.body.classList.contains('selectbox--open')) result.window = 'select';
+                    else if (document.body.classList.contains('settings--open')) result.window = 'settings';
+                    else if (document.querySelector && document.querySelector('.modal')) result.window = 'modal';
+                }
                 var nav = window.Navigator || (Lampa && Lampa.Navigator);
                 if (nav && nav._collection) result.collection = nav._collection.length;
             } catch (e) {}
@@ -124,7 +129,8 @@
             active = true;
 
             ['add', 'toggle', 'clear', 'collectionSet', 'collectionFocus',
-                'collectionAppend', 'focus', 'move', 'enter', 'back'].forEach(function (name) {
+                'collectionAppend', 'focus', 'move', 'enter', 'back',
+                'windowOpen', 'windowClose'].forEach(function (name) {
                 instrument(Lampa.Controller, name, 'Controller.' + name);
             });
             ['push', 'replace', 'back', 'backward'].forEach(function (name) {
