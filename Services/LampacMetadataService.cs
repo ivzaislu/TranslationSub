@@ -94,7 +94,8 @@ public static class LampacMetadataService
                     {
                         Source = x.source,
                         TranslationId = x.translation_id,
-                        TranslationName = x.translation
+                        TranslationName = x.translation,
+                        LatestEpisode = x.episode
                     })
                     .OrderBy(x => x.Source, StringComparer.OrdinalIgnoreCase)
                     .ToList();

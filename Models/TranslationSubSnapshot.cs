@@ -12,6 +12,9 @@ public class TranslationSubSnapshot
     [JsonProperty("profileId")]
     public string ProfileId { get; set; }
 
+    [JsonProperty("directNoticePlaybackEnabled")]
+    public bool DirectNoticePlaybackEnabled { get; set; }
+
     [JsonProperty("badge")]
     public TranslationSubBadgeSnapshot Badge { get; set; } = new();
 
@@ -128,6 +131,9 @@ public class TranslationSubSourceSnapshot
     [JsonProperty("source")]
     public string Source { get; set; }
 
+    [JsonProperty("latestEpisode")]
+    public int LatestEpisode { get; set; }
+
     [JsonProperty("translationId")]
     public string TranslationId { get; set; }
 
@@ -208,6 +214,9 @@ public class TranslationSubDisplaySnapshot
 
     [JsonProperty("noticeRange")]
     public string NoticeRange { get; set; }
+
+    [JsonProperty("noticeSources")]
+    public string NoticeSources { get; set; }
 
     [JsonProperty("tmdbFacts")]
     public string TmdbFacts { get; set; }

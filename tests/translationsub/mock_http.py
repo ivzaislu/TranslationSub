@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 PORT = 9130
 counts = Counter()
 lock = threading.Lock()
-state = {"second_failed": False, "tmdb_failed": False}
+state = {"second_failed": False, "tmdb_failed": False, "second_latest": False}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -31,6 +31,7 @@ class Handler(BaseHTTPRequestHandler):
             counts[path] += 1
             failed_second = state["second_failed"]
             failed_tmdb = state["tmdb_failed"]
+            second_latest = state["second_latest"]
         if path == "/__stats":
             with lock:
                 return self.respond(200, {"counts": dict(counts), "state": dict(state)})
@@ -49,6 +50,26 @@ class Handler(BaseHTTPRequestHandler):
                 },
                 "seasons": [{"season_number": 1, "episode_count": 6}],
             })
+        # Terminal TMDB fixtures for auto-unsubscribe integration tests.
+        terminal_statuses = {
+            "/tmdb/tv/124": ("Ended", "tt0000124"),
+            "/tmdb/tv/125": ("Canceled", "tt0000125"),
+            "/tmdb/tv/126": ("Cancelled", "tt0000126"),
+            "/tmdb/tv/127": ("Ended", "tt0000127"),
+        }
+        if path in terminal_statuses:
+            status, imdb_id = terminal_statuses[path]
+            return self.respond(200, {
+                "id": int(path.rsplit("/", 1)[-1]),
+                "name": "Terminal CI",
+                "status": status,
+                "external_ids": {"imdb_id": imdb_id},
+                "last_episode_to_air": {
+                    "season_number": 1, "episode_number": 2, "air_date": "2026-01-01"
+                },
+                "next_episode_to_air": None,
+                "seasons": [{"season_number": 1, "episode_count": 2}],
+            })
         if path == "/tmdb/find/tt0000123":
             return self.respond(200, {"tv_results": [{"id": 123}]})
         if path == "/balancer/one":
@@ -66,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
                 "type": "episode",
                 "data": [
                     {"s": 1, "e": n, "voice_name": "CI Voice", "voice_id": "ci-voice"}
-                    for n in (1, 2)
+                    for n in ((1, 2, 3) if second_latest else (1, 2))
                 ],
             })
         return self.respond(404, {"error": "not found", "path": path})
@@ -76,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(404, {"error": "not found"})
         try:
             data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-            assert all(k in ("second_failed", "tmdb_failed") for k in data)
+            assert all(k in ("second_failed", "tmdb_failed", "second_latest") for k in data)
             assert all(isinstance(v, bool) for v in data.values())
         except (ValueError, AssertionError):
             return self.respond(400, {"error": "bad state"})

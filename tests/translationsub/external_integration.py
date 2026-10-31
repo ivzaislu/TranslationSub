@@ -87,10 +87,89 @@ snapshot = json_request(f"{base}/snapshot?uid={UID}")
 rows = [x for x in snapshot["subscriptions"] if x["id"] == sub_id]
 assert len(rows) == 1 and rows[0]["availableEpisode"] == 3, snapshot
 assert rows[0]["tmdb"]["lastEpisode"] == 3, rows[0]
+notice = rows[0]["display"].get("noticeSources") or ""
+assert "collaps" in notice.lower() and "hdvb" not in notice.lower(), notice
+assert "showNoticeSources" in settings["schema"], settings
+assert settings["schema"]["showNoticeSources"]["defaultValue"] is True, settings
+assert settings["schema"]["directNoticePlayback"]["defaultValue"] is False, settings
+assert snapshot["directNoticePlaybackEnabled"] is False, snapshot
+assert {x["source"]: x["latestEpisode"] for x in rows[0]["sources"]} == {
+    "collaps": 3, "hdvb": 2
+}, rows[0]
+
+# The option controls only navigation, not providers or episode tracking.
+direct_on = json_request(f"{base}/settings?uid={UID}",
+                         {"uid": UID, "directNoticePlayback": True})
+assert direct_on["settings"]["DirectNoticePlayback"] is True, direct_on
+snapshot_on = json_request(f"{base}/snapshot?uid={UID}")
+assert snapshot_on["directNoticePlaybackEnabled"] is True, snapshot_on
+assert json_request(f"{base}/settings?uid={UID}")["settings"]["DirectNoticePlayback"] is True
+direct_off = json_request(f"{base}/settings?uid={UID}",
+                          {"uid": UID, "directNoticePlayback": False})
+assert direct_off["settings"]["DirectNoticePlayback"] is False, direct_off
+assert json_request(f"{base}/snapshot?uid={UID}")["directNoticePlaybackEnabled"] is False
+print("PASS: direct-notice navigation is opt-in, server-persisted and independent of source data")
+print("PASS: notifications identify only the balancer hosting the newest episode")
 with sqlite3.connect("/tmp/lampac-translationsub-timecode/database/translationsub.db") as db:
     count = db.execute("select count(*) from subscriptions where uid = ?", (UID,)).fetchone()[0]
     eq(count, 1, "SQLite subscription deduplication")
 print("PASS: subscription, idempotent duplicate, persisted TMDB schedule and SQLite")
+
+# A subscription persisted by an older version has source IDs but no
+# per-balancer episode counters. Do not guess which provider has E3.
+with sqlite3.connect("/tmp/lampac-translationsub-timecode/database/translationsub.db") as db:
+    (saved_sources,) = db.execute(
+        "SELECT sources_json FROM subscriptions WHERE id = ?", (sub_id,)).fetchone()
+    legacy_sources = [
+        {k: v for k, v in entry.items() if k != "LatestEpisode"}
+        for entry in json.loads(saved_sources)
+    ]
+    db.execute("UPDATE subscriptions SET sources_json = ? WHERE id = ?",
+               (json.dumps(legacy_sources), sub_id))
+    db.commit()
+legacy_snapshot = json_request(f"{base}/snapshot?uid={UID}")
+legacy_row = next(x for x in legacy_snapshot["subscriptions"] if x["id"] == sub_id)
+assert not legacy_row["display"].get("noticeSources"), legacy_row
+rechecked = json_request(f"{base}/check?uid={UID}", {})
+assert rechecked["success"] is True, rechecked
+rechecked_row = next(x for x in rechecked["snapshot"]["subscriptions"] if x["id"] == sub_id)
+notice_after_check = rechecked_row["display"].get("noticeSources") or ""
+assert "collaps" in notice_after_check.lower() and "hdvb" not in notice_after_check.lower(), notice_after_check
+print("PASS: legacy subscriptions get accurate balancer labels after a successful poll")
+
+# Server controls the notice line; hiding it does not hide ordinary source metadata.
+disabled = json_request(f"{base}/settings?uid={UID}",
+                        {"uid": UID, "showNoticeSources": False})
+assert disabled["settings"]["ShowNoticeSources"] is False, disabled
+snapshot_off = json_request(f"{base}/snapshot?uid={UID}")
+row_off = next(x for x in snapshot_off["subscriptions"] if x["id"] == sub_id)
+assert not row_off["display"].get("noticeSources"), row_off
+assert len(row_off["sources"]) == 2, row_off
+assert json_request(f"{base}/settings?uid={UID}")["settings"]["ShowNoticeSources"] is False
+print("PASS: disabled notice-balancer setting persists without dropping source metadata")
+
+enabled = json_request(f"{base}/settings?uid={UID}",
+                       {"uid": UID, "showNoticeSources": True})
+assert enabled["settings"]["ShowNoticeSources"] is True, enabled
+
+# Both sources now report episode E3: both labels should be shown.
+json_request(f"{MOCK}/__mode", {"second_latest": True})
+multi = json_request(f"{base}/check?uid={UID}", {})
+assert multi["success"] is True, multi
+multi_row = next(x for x in multi["snapshot"]["subscriptions"] if x["id"] == sub_id)
+multi_notice = multi_row["display"].get("noticeSources") or ""
+assert multi_notice.lower().startswith("балансеры: "), multi_notice
+assert "collaps" in multi_notice.lower() and "hdvb" in multi_notice.lower(), multi_notice
+print("PASS: both balancers are shown if both carry the latest episode")
+
+# When second source falls behind again, its name must disappear.
+json_request(f"{MOCK}/__mode", {"second_latest": False})
+single = json_request(f"{base}/check?uid={UID}", {})
+assert single["success"] is True, single
+single_row = next(x for x in single["snapshot"]["subscriptions"] if x["id"] == sub_id)
+single_notice = single_row["display"].get("noticeSources") or ""
+assert "collaps" in single_notice.lower() and "hdvb" not in single_notice.lower(), single_notice
+print("PASS: outdated balancers are not credited with the newest episode")
 
 json_request(f"{MOCK}/__mode", {"second_failed": True})
 degraded = json_request(f"{base}/content-state?uid={UID}", payload)

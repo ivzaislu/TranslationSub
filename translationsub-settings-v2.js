@@ -11,8 +11,9 @@
         cardSource: 'translationsub_card_source',
         smartTmdb: 'translationsub_tmdb_schedule',
         tmdbRefreshHours: 'translationsub_tmdb_refresh_hours',
-        endedRefreshDays: 'translationsub_tmdb_ended_days',
-        newSeasonMode: 'translationsub_new_season_mode'
+        newSeasonMode: 'translationsub_new_season_mode',
+        showNoticeSources: 'translationsub_show_notice_sources',
+        directNoticePlayback: 'translationsub_direct_notice_playback'
     };
 
     var serverReady = false;
@@ -190,13 +191,15 @@
         var interval = pick(settings, 'CheckIntervalHours', 'checkIntervalHours', null);
         var smart = pick(settings, 'UseTmdbSchedule', 'useTmdbSchedule', null);
         var tmdbHours = pick(settings, 'TmdbRefreshHours', 'tmdbRefreshHours', null);
-        var endedDays = pick(settings, 'EndedRefreshDays', 'endedRefreshDays', null);
         var seasonMode = pick(settings, 'NewSeasonMode', 'newSeasonMode', null);
+        var showNoticeSources = pick(settings, 'ShowNoticeSources', 'showNoticeSources', null);
+        var directNoticePlayback = pick(settings, 'DirectNoticePlayback', 'directNoticePlayback', null);
         if (interval !== null) storageSet(KEYS.interval, String(interval));
         if (smart !== null) storageSet(KEYS.smartTmdb, triggerStorageValue(smart, false));
         if (tmdbHours !== null) storageSet(KEYS.tmdbRefreshHours, String(tmdbHours));
-        if (endedDays !== null) storageSet(KEYS.endedRefreshDays, String(endedDays));
         if (seasonMode !== null) storageSet(KEYS.newSeasonMode, String(seasonMode));
+        if (showNoticeSources !== null) storageSet(KEYS.showNoticeSources, triggerStorageValue(showNoticeSources, true));
+        if (directNoticePlayback !== null) storageSet(KEYS.directNoticePlayback, triggerStorageValue(directNoticePlayback, false));
 
         availableItems.forEach(function (item) {
             var key = sourceParamKeys[item.id] || sourceParamKey(item.id);
@@ -223,14 +226,16 @@
         var interval = intOrNull(KEYS.interval);
         var smart = boolOrNull(KEYS.smartTmdb);
         var tmdbHours = intOrNull(KEYS.tmdbRefreshHours);
-        var endedDays = intOrNull(KEYS.endedRefreshDays);
         var seasonMode = storageGet(KEYS.newSeasonMode, null);
+        var showNoticeSources = boolOrNull(KEYS.showNoticeSources);
+        var directNoticePlayback = boolOrNull(KEYS.directNoticePlayback);
 
         if (interval !== null) body.checkIntervalHours = interval;
         if (smart !== null) body.useTmdbSchedule = smart;
         if (tmdbHours !== null) body.tmdbRefreshHours = tmdbHours;
-        if (endedDays !== null) body.endedRefreshDays = endedDays;
         if (seasonMode !== null && seasonMode !== '') body.newSeasonMode = String(seasonMode);
+        if (showNoticeSources !== null) body.showNoticeSources = showNoticeSources;
+        if (directNoticePlayback !== null) body.directNoticePlayback = directNoticePlayback;
         return body;
     }
 
@@ -405,17 +410,45 @@
                 'Как часто перепроверять расписание активных сериалов.'
             );
             addServerSelect(
-                'endedRefreshDays',
-                KEYS.endedRefreshDays,
-                'Перепроверка завершённых сериалов',
-                'Как часто TMDB проверяется на неожиданное продолжение.'
-            );
-            addServerSelect(
                 'newSeasonMode',
                 KEYS.newSeasonMode,
                 'Когда начинается новый сезон',
                 'Поведение подписки после появления следующего сезона.'
             );
+
+            var directDefault = schemaDefault('directNoticePlayback');
+            if (directDefault !== null) {
+                Lampa.SettingsApi.addParam({
+                    component: ROOT,
+                    param: { name: KEYS.directNoticePlayback, type: 'trigger', values: '', 'default': !!directDefault },
+                    field: {
+                        name: 'Прямой переход к просмотру из уведомлений',
+                        description: 'Открывать уведомление сразу в Online с нужным балансером, сезоном и озвучкой.'
+                    },
+                    onChange: function (value) {
+                        storageSet(KEYS.directNoticePlayback,
+                            triggerStorageValue(value, settingBool(KEYS.directNoticePlayback, !!directDefault)));
+                        syncServerSettings();
+                    }
+                });
+            }
+
+            var noticeSourceDefault = schemaDefault('showNoticeSources');
+            if (noticeSourceDefault !== null) {
+                Lampa.SettingsApi.addParam({
+                    component: ROOT,
+                    param: { name: KEYS.showNoticeSources, type: 'trigger', values: '', 'default': !!noticeSourceDefault },
+                    field: {
+                        name: 'Балансеры в уведомлениях',
+                        description: 'Показывать балансер с новой серией сразу под сезоном и эпизодами.'
+                    },
+                    onChange: function (value) {
+                        storageSet(KEYS.showNoticeSources,
+                            triggerStorageValue(value, settingBool(KEYS.showNoticeSources, !!noticeSourceDefault)));
+                        syncServerSettings();
+                    }
+                });
+            }
         } else {
             Lampa.SettingsApi.addParam({
                 component: ROOT,

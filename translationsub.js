@@ -108,13 +108,24 @@
             var target = String(name || fallback || '');
             if (!target) return;
 
+            // Restoring focus is asynchronous. A menu callback from an old
+            // card must not reactivate full_start/full_descr after navigating
+            // to Lampac Online or the subscriptions page.
+            var owner = null;
+            try {
+                if (window.Lampa && Lampa.Activity && typeof Lampa.Activity.active === 'function')
+                    owner = Lampa.Activity.active();
+            } catch (e) {}
+
             setTimeout(function () {
                 try {
                     if (!window.Lampa || !Lampa.Controller || typeof Lampa.Controller.toggle !== 'function') return;
+                    if (Lampa.Activity && typeof Lampa.Activity.active === 'function'
+                        && Lampa.Activity.active() !== owner) return;
                     var enabled = typeof Lampa.Controller.enabled === 'function' ? Lampa.Controller.enabled() : null;
                     if (enabled && enabled.name === target) return;
                     Lampa.Controller.toggle(target);
-                } catch (e) {}
+                } catch (e2) {}
             }, 0);
         }
 
