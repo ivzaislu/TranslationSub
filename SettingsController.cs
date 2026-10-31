@@ -68,7 +68,6 @@ public class TranslationSubSettingsController : BaseController
         int interval = body?.Value<int?>("checkIntervalHours") ?? current.CheckIntervalHours;
         bool useTmdbSchedule = body?.Value<bool?>("useTmdbSchedule") ?? current.UseTmdbSchedule;
         int tmdbRefreshHours = body?.Value<int?>("tmdbRefreshHours") ?? current.TmdbRefreshHours;
-        int endedRefreshDays = body?.Value<int?>("endedRefreshDays") ?? current.EndedRefreshDays;
         string newSeasonMode = body?.Value<string>("newSeasonMode") ?? current.NewSeasonMode;
         var sources = current.Sources?.ToList() ?? new List<string>();
 
@@ -89,7 +88,6 @@ public class TranslationSubSettingsController : BaseController
             sources,
             useTmdbSchedule,
             tmdbRefreshHours,
-            endedRefreshDays,
             newSeasonMode);
 
         var options = LampacSourceRegistry.AvailableSources();

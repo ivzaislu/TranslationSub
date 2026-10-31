@@ -49,6 +49,26 @@ class Handler(BaseHTTPRequestHandler):
                 },
                 "seasons": [{"season_number": 1, "episode_count": 6}],
             })
+        # Terminal TMDB fixtures for auto-unsubscribe integration tests.
+        terminal_statuses = {
+            "/tmdb/tv/124": ("Ended", "tt0000124"),
+            "/tmdb/tv/125": ("Canceled", "tt0000125"),
+            "/tmdb/tv/126": ("Cancelled", "tt0000126"),
+            "/tmdb/tv/127": ("Ended", "tt0000127"),
+        }
+        if path in terminal_statuses:
+            status, imdb_id = terminal_statuses[path]
+            return self.respond(200, {
+                "id": int(path.rsplit("/", 1)[-1]),
+                "name": "Terminal CI",
+                "status": status,
+                "external_ids": {"imdb_id": imdb_id},
+                "last_episode_to_air": {
+                    "season_number": 1, "episode_number": 2, "air_date": "2026-01-01"
+                },
+                "next_episode_to_air": None,
+                "seasons": [{"season_number": 1, "episode_count": 2}],
+            })
         if path == "/tmdb/find/tt0000123":
             return self.respond(200, {"tv_results": [{"id": 123}]})
         if path == "/balancer/one":
