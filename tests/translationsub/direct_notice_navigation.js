@@ -360,7 +360,7 @@ function makeFocusClient() {
                             if (selector === '.selector.focus')
                                 return { length: focusedRow || stalePosterFocus ? 1 : 0 };
                             if (selector === '.online-prestige--full.selector.focus, .online-prestige--folder.selector.focus')
-                                return { length: focusedRow ? 1 : 0 };
+                                return focusedRow ? { length: 1, 0: currentRow } : { length: 0 };
                             if (selector === '.online-prestige--full.selector, .online-prestige--folder.selector')
                                 return hasRows ? { length: 3, 0: currentRow } : { length: 0 };
                             return { length: 0 };
