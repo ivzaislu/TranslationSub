@@ -69,6 +69,7 @@ public class TranslationSubSettingsController : BaseController
         bool useTmdbSchedule = body?.Value<bool?>("useTmdbSchedule") ?? current.UseTmdbSchedule;
         int tmdbRefreshHours = body?.Value<int?>("tmdbRefreshHours") ?? current.TmdbRefreshHours;
         string newSeasonMode = body?.Value<string>("newSeasonMode") ?? current.NewSeasonMode;
+        bool showNoticeSources = body?.Value<bool?>("showNoticeSources") ?? current.ShowNoticeSources;
         var sources = current.Sources?.ToList() ?? new List<string>();
 
         if (body?["sources"] is JArray arr)
@@ -88,7 +89,8 @@ public class TranslationSubSettingsController : BaseController
             sources,
             useTmdbSchedule,
             tmdbRefreshHours,
-            newSeasonMode);
+            newSeasonMode,
+            showNoticeSources);
 
         var options = LampacSourceRegistry.AvailableSources();
         return ContentTo(JsonConvert.SerializeObject(new

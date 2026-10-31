@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 PORT = 9130
 counts = Counter()
 lock = threading.Lock()
-state = {"second_failed": False, "tmdb_failed": False}
+state = {"second_failed": False, "tmdb_failed": False, "second_latest": False}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -31,6 +31,7 @@ class Handler(BaseHTTPRequestHandler):
             counts[path] += 1
             failed_second = state["second_failed"]
             failed_tmdb = state["tmdb_failed"]
+            second_latest = state["second_latest"]
         if path == "/__stats":
             with lock:
                 return self.respond(200, {"counts": dict(counts), "state": dict(state)})
@@ -86,7 +87,7 @@ class Handler(BaseHTTPRequestHandler):
                 "type": "episode",
                 "data": [
                     {"s": 1, "e": n, "voice_name": "CI Voice", "voice_id": "ci-voice"}
-                    for n in (1, 2)
+                    for n in ((1, 2, 3) if second_latest else (1, 2))
                 ],
             })
         return self.respond(404, {"error": "not found", "path": path})
@@ -96,7 +97,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.respond(404, {"error": "not found"})
         try:
             data = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-            assert all(k in ("second_failed", "tmdb_failed") for k in data)
+            assert all(k in ("second_failed", "tmdb_failed", "second_latest") for k in data)
             assert all(isinstance(v, bool) for v in data.values())
         except (ValueError, AssertionError):
             return self.respond(400, {"error": "bad state"})

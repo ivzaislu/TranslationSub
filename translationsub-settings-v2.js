@@ -11,7 +11,8 @@
         cardSource: 'translationsub_card_source',
         smartTmdb: 'translationsub_tmdb_schedule',
         tmdbRefreshHours: 'translationsub_tmdb_refresh_hours',
-        newSeasonMode: 'translationsub_new_season_mode'
+        newSeasonMode: 'translationsub_new_season_mode',
+        showNoticeSources: 'translationsub_show_notice_sources'
     };
 
     var serverReady = false;
@@ -190,10 +191,12 @@
         var smart = pick(settings, 'UseTmdbSchedule', 'useTmdbSchedule', null);
         var tmdbHours = pick(settings, 'TmdbRefreshHours', 'tmdbRefreshHours', null);
         var seasonMode = pick(settings, 'NewSeasonMode', 'newSeasonMode', null);
+        var showNoticeSources = pick(settings, 'ShowNoticeSources', 'showNoticeSources', null);
         if (interval !== null) storageSet(KEYS.interval, String(interval));
         if (smart !== null) storageSet(KEYS.smartTmdb, triggerStorageValue(smart, false));
         if (tmdbHours !== null) storageSet(KEYS.tmdbRefreshHours, String(tmdbHours));
         if (seasonMode !== null) storageSet(KEYS.newSeasonMode, String(seasonMode));
+        if (showNoticeSources !== null) storageSet(KEYS.showNoticeSources, triggerStorageValue(showNoticeSources, true));
 
         availableItems.forEach(function (item) {
             var key = sourceParamKeys[item.id] || sourceParamKey(item.id);
@@ -221,11 +224,13 @@
         var smart = boolOrNull(KEYS.smartTmdb);
         var tmdbHours = intOrNull(KEYS.tmdbRefreshHours);
         var seasonMode = storageGet(KEYS.newSeasonMode, null);
+        var showNoticeSources = boolOrNull(KEYS.showNoticeSources);
 
         if (interval !== null) body.checkIntervalHours = interval;
         if (smart !== null) body.useTmdbSchedule = smart;
         if (tmdbHours !== null) body.tmdbRefreshHours = tmdbHours;
         if (seasonMode !== null && seasonMode !== '') body.newSeasonMode = String(seasonMode);
+        if (showNoticeSources !== null) body.showNoticeSources = showNoticeSources;
         return body;
     }
 
@@ -405,6 +410,23 @@
                 'Когда начинается новый сезон',
                 'Поведение подписки после появления следующего сезона.'
             );
+
+            var noticeSourceDefault = schemaDefault('showNoticeSources');
+            if (noticeSourceDefault !== null) {
+                Lampa.SettingsApi.addParam({
+                    component: ROOT,
+                    param: { name: KEYS.showNoticeSources, type: 'trigger', values: '', 'default': !!noticeSourceDefault },
+                    field: {
+                        name: 'Балансеры в уведомлениях',
+                        description: 'Показывать балансер с новой серией сразу под сезоном и эпизодами.'
+                    },
+                    onChange: function (value) {
+                        storageSet(KEYS.showNoticeSources,
+                            triggerStorageValue(value, settingBool(KEYS.showNoticeSources, !!noticeSourceDefault)));
+                        syncServerSettings();
+                    }
+                });
+            }
         } else {
             Lampa.SettingsApi.addParam({
                 component: ROOT,
