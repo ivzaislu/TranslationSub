@@ -15,6 +15,7 @@ function makeClient() {
     const activities = [];
     const selections = [];
     let selectorCloses = 0;
+    const activityListeners = [];
     const client = {
         lampac_plugin: true,
         TranslationSubRuntime: {
@@ -29,8 +30,21 @@ function makeClient() {
             set(key, value) { storage[key] = JSON.parse(JSON.stringify(value)); },
             get() { return ''; }
         },
+        Listener: {
+            follow(name, callback) {
+                if (name === 'activity') activityListeners.push(callback);
+            },
+            send(name, event) {
+                if (name === 'activity') activityListeners.slice().forEach(fn => fn(event));
+            }
+        },
         Activity: {
-            push(value) { activities.push(value); },
+            push(value) {
+                activities.push(value);
+                Lampa.Listener.send('activity', {
+                    type: 'start', component: value.component, object: value
+                });
+            },
             back() { activities.pop(); }
         },
         Select: {
@@ -305,21 +319,29 @@ function makeFocusClient() {
     const pending = [];
     const Lampa = test.client.Lampa;
     let hasRows = false;
-    let hasFocus = false;
+    let focusedRow = false;
+    let stalePosterFocus = false;
     let controller = 'content';
+    let modalOpen = false;
     let toggles = 0;
+    let explicitFocus = 0;
     let lastForce = null;
 
     test.context.setTimeout = callback => { pending.push(callback); };
-    Lampa.Platform = { screen(name) { return name === 'tv'; } };
     Lampa.Activity.active = () => test.activities[test.activities.length - 1];
     Lampa.Controller = {
         enabled() { return { name: controller }; },
+        windowTop() { return modalOpen ? { name: 'select' } : false; },
         toggle(name, force) {
             assert.equal(name, 'content');
             toggles++;
             lastForce = force;
-            hasFocus = true;
+        },
+        collectionFocus(row) {
+            assert.ok(row, 'must focus an actual Online episode element');
+            assert.equal(row.row, true);
+            explicitFocus++;
+            focusedRow = true;
         }
     };
     const push = Lampa.Activity.push;
@@ -330,9 +352,12 @@ function makeFocusClient() {
                 render() {
                     return {
                         find(selector) {
-                            if (selector === '.selector.focus') return { length: hasFocus ? 1 : 0 };
+                            if (selector === '.selector.focus')
+                                return { length: focusedRow || stalePosterFocus ? 1 : 0 };
+                            if (selector === '.online-prestige--full.selector.focus, .online-prestige--folder.selector.focus')
+                                return { length: focusedRow ? 1 : 0 };
                             if (selector === '.online-prestige--full.selector, .online-prestige--folder.selector')
-                                return { length: hasRows ? 3 : 0 };
+                                return hasRows ? { length: 3, 0: { row: true } } : { length: 0 };
                             return { length: 0 };
                         }
                     };
@@ -349,9 +374,13 @@ function makeFocusClient() {
             pending.shift()();
         },
         ready() { hasRows = true; },
-        focus() { hasFocus = true; },
+        focus() { focusedRow = true; },
+        unfocus() { focusedRow = false; },
+        stalePoster() { stalePosterFocus = true; },
         setController(name) { controller = name; },
+        setModal(value) { modalOpen = value; },
         toggles() { return toggles; },
+        focusCalls() { return explicitFocus; },
         forced() { return lastForce; }
     };
 }
@@ -359,18 +388,20 @@ function makeFocusClient() {
 {
     const tv = makeFocusClient();
     assert.equal(tv.client.TranslationSubCardSource.openNoticeOnline(item([active])), true);
-    tv.next(); // open the full card and then Online
+    tv.next(); // open series card and Online; activity listener starts monitor
     assert.deepEqual(tv.activities.map(a => a.component), ['full', 'lampac']);
+    assert.equal(tv.activities[1].translationsub_direct_notice, true);
     assert.equal(tv.toggles(), 0);
 
-    tv.next(); // content still loading: no rows available yet
+    tv.next(); // episodes not loaded yet
     assert.equal(tv.toggles(), 0);
     tv.ready();
-    tv.next(); // asynchronous Online rows have appeared
-    assert.equal(tv.toggles(), 1, 'set TV remote focus as soon as Online rows arrive');
-    assert.equal(tv.forced(), true, 'bypass stale notification-window redirect');
-    assert.equal(tv.pending.length, 0, 'once focused, stop retrying');
-    console.log('PASS: TV focus activates automatically after asynchronous Online results');
+    tv.next(); // async results become selectable
+    assert.equal(tv.toggles(), 1);
+    assert.equal(tv.focusCalls(), 1, 'explicitly focus an actual Online episode');
+    assert.equal(tv.forced(), true);
+    assert.equal(tv.pending.length, 0);
+    console.log('PASS: TV and keyboard focus moves to the loaded Online episode list');
 }
 
 {
@@ -378,10 +409,12 @@ function makeFocusClient() {
     tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
     tv.next();
     tv.ready();
-    tv.focus(); // Lampac already focused a row
+    tv.stalePoster();
     tv.next();
-    assert.equal(tv.toggles(), 0, 'do not change existing focus');
-    console.log('PASS: existing focus is preserved');
+    assert.equal(tv.toggles(), 1,
+        'stale .selector.focus on explorer poster must not count as focused Online episode');
+    assert.equal(tv.focusCalls(), 1);
+    console.log('PASS: stale poster/header focus cannot hide missing episode focus');
 }
 
 {
@@ -389,11 +422,10 @@ function makeFocusClient() {
     tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
     tv.next();
     tv.ready();
-    tv.setController('select'); // user opened source/filter menu while loading
+    tv.focus();
     tv.next();
-    assert.equal(tv.toggles(), 0, 'do not steal focus from user-opened Lampa Select');
-    assert.equal(tv.pending.length, 0, 'cancel obsolete focus work');
-    console.log('PASS: source chooser keeps its remote focus');
+    assert.equal(tv.toggles(), 0, 'do not change genuine existing episode focus');
+    console.log('PASS: existing episode focus is preserved');
 }
 
 {
@@ -401,11 +433,85 @@ function makeFocusClient() {
     tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
     tv.next();
     tv.ready();
-    tv.activities.push({ component: 'other' }); // navigation moved elsewhere
+    tv.setController('full_start'); // leftover controller from a prior card
+    tv.next();
+    assert.equal(tv.toggles(), 1, 'recover from stale full-card controller');
+    console.log('PASS: stale full-card controller is recovered');
+}
+
+{
+    const tv = makeFocusClient();
+    tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
+    tv.next();
+    tv.ready();
+    tv.setController('select'); // user opened a filter/source menu
     tv.next();
     assert.equal(tv.toggles(), 0);
     assert.equal(tv.pending.length, 0);
-    console.log('PASS: focus handler stops after leaving Online');
+    console.log('PASS: source chooser retains its focus');
+}
+
+{
+    const tv = makeFocusClient();
+    tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
+    tv.next();
+    tv.ready();
+    tv.setModal(true);
+    tv.next();
+    assert.equal(tv.toggles(), 0);
+    assert.equal(tv.pending.length, 0);
+    console.log('PASS: visible modal protects its own remote focus');
+}
+
+{
+    const tv = makeFocusClient();
+    tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
+    tv.next();
+    tv.ready();
+    tv.activities.push({ component: 'other' });
+    tv.next();
+    assert.equal(tv.toggles(), 0);
+    assert.equal(tv.pending.length, 0);
+    console.log('PASS: recovery stops after navigating away from Online');
+}
+
+{
+    const tv = makeFocusClient();
+    tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
+    tv.next();
+    tv.ready();
+    // Lampac may switch balancers using Activity.replace(), producing a
+    // *different* activity object with the same direct-notice flag.
+    const oldOnline = tv.activities.pop();
+    const replacement = { ...oldOnline };
+    tv.activities.push(replacement);
+    tv.client.Lampa.Listener.send('activity', {
+        type: 'start', component: 'lampac', object: replacement
+    });
+    tv.next(); // outdated monitor must not focus the replaced screen
+    assert.equal(tv.toggles(), 0);
+    tv.next(); // new activity start monitor
+    assert.equal(tv.toggles(), 1);
+    assert.equal(tv.focusCalls(), 1);
+    console.log('PASS: focus recovery survives Lampac Activity.replace');
+}
+
+{
+    const tv = makeFocusClient();
+    tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
+    tv.next();
+    tv.ready();
+    tv.next();
+    assert.equal(tv.toggles(), 1);
+    tv.activities.pop();
+    tv.activities.pop();
+    tv.unfocus();
+    tv.client.TranslationSubCardSource.openNoticeOnline(item([active]));
+    tv.next(); // second notification navigation
+    tv.next(); // second episode focus recovery
+    assert.equal(tv.toggles(), 2, 'every new direct transition must restore focus independently');
+    assert.equal(tv.focusCalls(), 2);
+    console.log('PASS: repeated notification transitions restore focus');
 }
 
 new vm.Script(source);
