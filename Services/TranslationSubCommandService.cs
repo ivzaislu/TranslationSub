@@ -223,7 +223,8 @@ public static class TranslationSubCommandService
                 {
                     Source = TranslationSettingsStore.NormalizeSourceId(x.Source) ?? x.Source,
                     TranslationId = x.TranslationId,
-                    TranslationName = x.TranslationName
+                    TranslationName = x.TranslationName,
+                    LatestEpisode = Math.Max(0, x.LatestEpisode)
                 })
                 .GroupBy(x => x.Source ?? string.Empty, StringComparer.OrdinalIgnoreCase)
                 .Select(x => x.First())
@@ -240,7 +241,8 @@ public static class TranslationSubCommandService
             {
                 Source = source,
                 TranslationId = variant.translation_id,
-                TranslationName = variant.translation
+                TranslationName = variant.translation,
+                LatestEpisode = Math.Max(0, variant.episode)
             }
         };
     }

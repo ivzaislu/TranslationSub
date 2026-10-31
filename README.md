@@ -73,7 +73,7 @@
   <tr>
     <td width="50%" align="center">
       <img src="docs/screenshots/settings.png" alt="Настройки TranslationSub">
-      <br><sub>Интервалы, TMDB и новые сезоны</sub>
+      <br><sub>Интервалы, TMDB и новые сезоны (скриншот прежней версии настроек)</sub>
     </td>
     <td width="50%" align="center">
       <img src="docs/screenshots/balancers.png" alt="Выбор балансеров TranslationSub">
