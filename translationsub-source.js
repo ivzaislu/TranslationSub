@@ -190,11 +190,14 @@
             status: function () {
                 return { active: active, events: records.length, version: 'focus-diagnostic-1' };
             },
-            report: function () {
+            report: function (limit) {
                 if (active) recordState();
+                var take = typeof limit === 'number' && isFinite(limit)
+                    ? Math.max(20, Math.min(MAX, Math.floor(limit))) : 160;
                 return JSON.stringify({
                     version: 'focus-diagnostic-1', active: active,
-                    current: state(), events: records
+                    current: state(), retainedEvents: records.length,
+                    events: records.slice(-take)
                 }, null, 2);
             }
         };
