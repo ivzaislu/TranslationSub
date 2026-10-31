@@ -6,6 +6,8 @@
 
     var SOURCE_SETTING = 'translationsub_card_source';
     var menuOpen = false;
+    var focusListenerInstalled = false;
+    var focusRecoverySeq = 0;
 
     function storageGet(name, fallback) {
         try {
@@ -80,38 +82,58 @@
         });
     }
 
-    // Lampac creates its content controller before the asynchronous Online
-    // episode list has any selectable rows. On a TV its first collectionFocus
-    // can therefore select nothing. Restore focus *once* when real rows arrive,
-    // and only while this exact Online activity still owns the content view.
+    // In Lampa the Online activity is started before Lampac has populated
+    // the episode list. Also, a stale .focus class on the poster/header does
+    // not mean a playable row belongs to the current Navigator collection.
+    // Follow this activity through Lampac's Activity.replace() transitions.
     function focusOnlineAfterLoad(onlineActivity) {
-        if (!window.Lampa || !Lampa.Platform || typeof Lampa.Platform.screen !== 'function'
-            || !Lampa.Platform.screen('tv')
-            || !Lampa.Controller || typeof Lampa.Controller.toggle !== 'function'
+        if (!window.Lampa || !Lampa.Controller
+            || typeof Lampa.Controller.toggle !== 'function'
             || typeof Lampa.Controller.enabled !== 'function'
             || !Lampa.Activity || typeof Lampa.Activity.active !== 'function')
             return;
 
+        var sequence = ++focusRecoverySeq;
         var attempts = 0;
+
         function checkFocus() {
+            if (sequence !== focusRecoverySeq) return;
+
             try {
-                // Never steal the remote from a new screen, menu, filter or
-                // player opened by the user while network requests complete.
                 if (Lampa.Activity.active() !== onlineActivity) return;
+
                 var enabled = Lampa.Controller.enabled();
-                if (!enabled || enabled.name !== 'content') return;
+                if (!enabled) return;
+
+                // Do not take focus away from a user-opened menu, modal,
+                // poster, header or player. A leftover full_start controller
+                // from an earlier card may be recovered, however.
+                if (enabled.name !== 'content'
+                    && enabled.name !== 'full_start'
+                    && enabled.name !== 'full_descr'
+                    && enabled.name !== 'items_line') return;
+                if (typeof Lampa.Controller.windowTop === 'function'
+                    && Lampa.Controller.windowTop()) return;
 
                 var view = onlineActivity.activity && onlineActivity.activity.render
                     ? onlineActivity.activity.render() : null;
                 if (view && typeof view.find === 'function') {
-                    if (view.find('.selector.focus').length) return;
+                    var rows = view.find('.online-prestige--full.selector, .online-prestige--folder.selector');
 
-                    // The header/poster exists before any Online results.
-                    // Wait for actual playable rows rather than focusing early.
-                    if (view.find('.online-prestige--full.selector, .online-prestige--folder.selector').length) {
-                        // Forced toggle avoids a stale windowRedirect after
-                        // closing the notification modal on TV.
+                    // Only a focused episode row counts. Old .focus classes
+                    // on the explorer poster/filter must not suppress repair.
+                    if (view.find('.online-prestige--full.selector.focus, .online-prestige--folder.selector.focus').length)
+                        return;
+
+                    if (rows.length) {
+                        // The native Lampac controller populates its Navigator
+                        // collection on toggle. Then point focus explicitly
+                        // at an episode in that newly populated collection.
                         Lampa.Controller.toggle('content', true);
+                        if (typeof Lampa.Controller.collectionFocus === 'function') {
+                            var row = rows[0];
+                            if (row) Lampa.Controller.collectionFocus(row, view);
+                        }
                         return;
                     }
                 }
@@ -119,11 +141,12 @@
                 return;
             }
 
-            // Lampac may spend up to 15 seconds discovering a provider,
-            // followed by a slow Online response. Keep trying while this
-            // exact activity owns content, but never poll indefinitely.
+            // Balancer discovery can take 15s followed by a slow provider
+            // response. Stop after a bounded window, or when the activity
+            // was replaced or the user navigated elsewhere.
             if (++attempts < 180) setTimeout(checkFocus, 500);
         }
+
         setTimeout(checkFocus, 250);
     }
 
@@ -185,7 +208,8 @@
                 search_two: original,
                 page: 1,
                 clarification: false,
-                lampac_custom_select: balancer
+                lampac_custom_select: balancer,
+                translationsub_direct_notice: true
             };
 
             // The stock Lampa Explorer poster acts as Activity.back() when
@@ -212,7 +236,9 @@
                     Lampa.Activity.push(seriesCard);
                     cardAdded = true;
                     Lampa.Activity.push(activity);
-                    focusOnlineAfterLoad(activity);
+                    // Lampa emits the activity start event after each push.
+                    // Fallback covers older builds without that listener.
+                    if (!focusListenerInstalled) focusOnlineAfterLoad(activity);
                 } catch (e) {
                     // If Online fails after inserting the card, leave that
                     // already-open card visible (no duplicate fallback push).
@@ -382,6 +408,20 @@
             openNoticeOnline: openNoticeOnline,
             bindPage: bindPage
         };
+
+        // The Online plugin replaces the whole activity when switching
+        // balancers. A monitor tied only to the first object silently dies.
+        // Keep the flag on the activity so every replacement can be focused
+        // independently; ordinary Online routes are never intercepted.
+        if (Lampa.Listener && typeof Lampa.Listener.follow === 'function') {
+            Lampa.Listener.follow('activity', function (event) {
+                if (!event || event.type !== 'start' || event.component !== 'lampac'
+                    || !event.object || event.object.translationsub_direct_notice !== true)
+                    return;
+                focusOnlineAfterLoad(event.object);
+            });
+            focusListenerInstalled = true;
+        }
     }
 
     window.TranslationSubRuntime.onReady(start);
