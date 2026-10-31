@@ -68,7 +68,7 @@
                 return stack.map(function (line) {
                     // Keep only source filenames and line numbers: never log
                     // document URLs, query strings, movie names, or tokens.
-                    var match = line.match(/([A-Za-z0-9_.-]+\\.js):(\\d+):(\\d+)/);
+                    var match = line.match(/([A-Za-z0-9_.-]+\.js):(\d+):(\d+)/);
                     return match ? match[1] + ':' + match[2] : 'unknown';
                 }).join(' > ');
             } catch (e) { return ''; }
