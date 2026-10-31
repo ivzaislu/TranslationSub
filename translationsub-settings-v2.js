@@ -423,7 +423,7 @@
                     param: { name: KEYS.directNoticePlayback, type: 'trigger', values: '', 'default': !!directDefault },
                     field: {
                         name: 'Прямой переход к просмотру из уведомлений',
-                        description: 'При нажатии открывать Online-балансер с нужной озвучкой и сезоном (экспериментально).'
+                        description: 'Открывать уведомление сразу в Online с нужным балансером, сезоном и озвучкой.'
                     },
                     onChange: function (value) {
                         storageSet(KEYS.directNoticePlayback,
