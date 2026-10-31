@@ -38,14 +38,23 @@
     function openUpdate(item, previousController, directEnabled) {
         var closed = false;
 
-        function closeOnce() {
+        function closeOnce(restorePreviousController) {
             if (closed) return;
             closed = true;
-            closeAndRestore(previousController);
+            if (restorePreviousController) closeAndRestore(previousController);
+            else {
+                // Direct Online navigation immediately installs its own
+                // content controller. Do not schedule restoration of the old
+                // notification controller: it can steal remote focus on TV.
+                try {
+                    if (Lampa.Modal && typeof Lampa.Modal.close === 'function')
+                        Lampa.Modal.close();
+                } catch (e) {}
+            }
         }
 
         function openSeriesCard() {
-            closeOnce();
+            closeOnce(true);
             setTimeout(function () {
                 try {
                     var source = window.TranslationSubCardSource;
@@ -65,7 +74,7 @@
             var source = window.TranslationSubCardSource;
             if (directEnabled && source && typeof source.openNoticeOnline === 'function') {
                 if (source.openNoticeOnline(item, {
-                    beforeNavigate: closeOnce,
+                    beforeNavigate: function () { closeOnce(false); },
                     onFailure: openSeriesCard
                 })) return;
             }
