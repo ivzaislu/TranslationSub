@@ -1,3 +1,12 @@
+/**
+ * TranslationSub — управление озвучками и подписками из карточки сериала.
+ *
+ * Здесь находятся логика кнопки «Озвучки», индикация загрузки,
+ * выбор перевода, подписка / отписка и синхронизация с API Lampa.
+ *
+ * Клиент может предположить, что карточка является сериалом,
+ * но окончательное решение о доступности подписок принимает сервер.
+ */
 (function () {
     'use strict';
 
@@ -9,6 +18,79 @@
     var viewToken = 0;
     var dialogToken = 0;
     var busy = false;
+    var voiceRequest = null;
+
+    // -------------------------------------------------------------------------
+    // Индикация загрузки списка озвучек
+    // -------------------------------------------------------------------------
+
+    function setVoiceLoading(button, loading) {
+        if (!button || !button.length) return;
+
+        button.toggleClass('translationsub-full-button--loading', loading);
+        button.attr('aria-busy', loading ? 'true' : 'false');
+
+        if (loading) {
+            button.find('.translationsub-full-button__spinner').remove();
+            button.prepend(
+                '<i class="translationsub-full-button__spinner" aria-hidden="true"></i>'
+            );
+            button.find('span').text('Собираем озвучки…');
+        } else {
+            button.find('.translationsub-full-button__spinner').remove();
+            button.find('span').text('Озвучки');
+        }
+    }
+
+    function finishVoiceRequest(request) {
+        // Не сбрасываем состояние, если ответ принадлежит старому запросу.
+        if (voiceRequest !== request) return;
+
+        setVoiceLoading(request.button, false);
+        voiceRequest = null;
+    }
+
+    function injectLoadingStyle() {
+        if (document.getElementById('translationsub-card-loading-style')) return;
+
+        var style = document.createElement('style');
+        style.id = 'translationsub-card-loading-style';
+
+        // CSS хранится построчно для удобного редактирования.
+        style.textContent = [
+            '.translationsub-full-button__spinner {',
+            '    display: block;',
+            '    width: 1.5em;',
+            '    height: 1.5em;',
+            '    flex: 0 0 1.5em;',
+            '    box-sizing: border-box;',
+            '    border: .15em solid currentColor;',
+            '    border-right-color: transparent;',
+            '    border-radius: 50%;',
+            '    animation: translationsub-card-spin .8s linear infinite;',
+            '}',
+            '.translationsub-full-button--loading > .translationsub-full-button__bell {',
+            '    display: none;',
+            '}',
+            '.translationsub-full-button--loading.translationsub-full-button--mobile > span {',
+            '    display: block !important;',
+            '}',
+            '@keyframes translationsub-card-spin {',
+            '    to { transform: rotate(360deg); }',
+            '}',
+            '@media (prefers-reduced-motion: reduce) {',
+            '    .translationsub-full-button__spinner {',
+            '        animation: none;',
+            '    }',
+            '}'
+        ].join('\n');
+
+        (document.head || document.documentElement).appendChild(style);
+    }
+
+    // -------------------------------------------------------------------------
+    // Уведомления и подготовка данных карточки
+    // -------------------------------------------------------------------------
 
     function notify(text) {
         try {
@@ -16,8 +98,15 @@
                 Lampa.Noty.show(text);
                 return;
             }
-        } catch (e) {}
-        try { console.log('[TranslationSub]', text); } catch (e2) {}
+        } catch (e) {
+            // Lampa может быть недоступна: используем консоль.
+        }
+
+        try {
+            console.log('[TranslationSub]', text);
+        } catch (e2) {
+            // Отсутствие консоли не должно мешать работе интерфейса.
+        }
     }
 
     function bellSvg() {
@@ -25,8 +114,11 @@
     }
 
     function primitive(value) {
-        return value === null || value === undefined ||
-            typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean';
+        return value === null ||
+            value === undefined ||
+            typeof value === 'string' ||
+            typeof value === 'number' ||
+            typeof value === 'boolean';
     }
 
     function copyFields(source, names) {
@@ -41,10 +133,15 @@
 
     function safeNested(value) {
         if (!value || typeof value !== 'object') return value;
-        try { return JSON.parse(JSON.stringify(value)); }
-        catch (e) { return null; }
+
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (e) {
+            return null;
+        }
     }
 
+    // Копируем только нужные API поля, исключая внутренние объекты Lampa.
     function transportPayload(object) {
         object = object || {};
         var card = object.movie || object.card || object.data || object || {};
@@ -77,9 +174,17 @@
     }
 
     function activeFull() {
-        try { return typeof $ === 'function' && $('.full-start:visible,.full-start-new:visible').length > 0; }
-        catch (e) { return false; }
+        try {
+            return typeof $ === 'function' &&
+                $('.full-start:visible,.full-start-new:visible').length > 0;
+        } catch (e) {
+            return false;
+        }
     }
+
+    // -------------------------------------------------------------------------
+    // Диалог выбора озвучек
+    // -------------------------------------------------------------------------
 
     function showSelect(title, items, token, previousController) {
         items = Array.isArray(items) ? items : [];
@@ -133,6 +238,10 @@
         return fallback;
     }
 
+    // -------------------------------------------------------------------------
+    // Оформление подписки и отмена подписки
+    // -------------------------------------------------------------------------
+
     function subscribe(raw, state, voice) {
         if (busy) return;
         var client = api();
@@ -181,7 +290,14 @@
         });
     }
 
-    function openForItem(object) {
+    // -------------------------------------------------------------------------
+    // Загрузка озвучек и обработка ответа API
+    // -------------------------------------------------------------------------
+
+    function openForItem(object, button) {
+        // Пока идёт загрузка, повторный запрос не запускается.
+        if (voiceRequest) return;
+
         var raw = transportPayload(object || {});
         var client = api();
         if (!client || typeof client.contentState !== 'function')
@@ -189,8 +305,12 @@
 
         var previousController = window.TranslationSubRuntime.controllerName('content');
         var token = ++dialogToken;
+        var request = { button: button, view: viewToken };
+        voiceRequest = request;
+        setVoiceLoading(button, true);
         client.contentState(raw, function (state) {
-            if (token !== dialogToken || !activeFull()) return;
+            finishVoiceRequest(request);
+            if (request.view !== viewToken || token !== dialogToken || !activeFull()) return;
             state = state && typeof state === 'object' ? state : {};
 
             if (!state.eligible) {
@@ -226,9 +346,15 @@
 
             showSelect('Озвучки · ' + Number(state.content && state.content.season || 1) + ' сезон', items, token, previousController);
         }, function () {
-            if (token === dialogToken) notify('Не удалось загрузить список озвучек');
+            finishVoiceRequest(request);
+            if (request.view === viewToken && token === dialogToken && activeFull())
+                notify('Не удалось загрузить список озвучек');
         });
     }
+
+    // -------------------------------------------------------------------------
+    // Поиск и создание кнопки в карточке
+    // -------------------------------------------------------------------------
 
     function buttonRoot(event) {
         var root = null;
@@ -266,47 +392,111 @@
     function renderButton(button, buttonState) {
         if (!button || !button.length) return;
         buttonState = buttonState && typeof buttonState === 'object' ? buttonState : {};
+
         var active = !!buttonState.subscribed;
-        button.empty().append(bellSvg()).append('<span>Озвучки</span>');
+        var title = buttonState.title ||
+            (active ? 'Озвучки · подписка активна' : 'Подписки на озвучки');
+
+        button.empty()
+            .append(bellSvg())
+            .append('<span>Озвучки</span>');
+
         button.toggleClass('translationsub-full-button--subscribed', active);
-        button.attr('title', String(buttonState.title || (active ? 'Озвучки · подписка активна' : 'Подписки на озвучки')));
+        button.attr('title', String(title));
     }
 
-    function applyButton(event, token) {
-        if (typeof $ !== 'function') return;
-        var client = api();
-        if (!client || typeof client.contentSummary !== 'function') return;
+    // Это лишь подсказка для ранней отрисовки кнопки.
+    // Сервер позже подтвердит, можно ли оформлять подписку.
+    function serialCardHint(raw) {
+        var card = raw.card || {};
+        var method = String(raw.method || card.method || '').toLowerCase();
+        var type = String(
+            raw.media_type || raw.type || card.media_type || card.type || ''
+        ).toLowerCase();
 
+        function yes(value) {
+            return value === true ||
+                value === 1 ||
+                value === '1' ||
+                String(value).toLowerCase() === 'true';
+        }
+
+        return method === 'tv' ||
+            method === 'serial' ||
+            type === 'tv' ||
+            type === 'serial' ||
+            type === 'series' ||
+            yes(raw.serial) ||
+            yes(card.serial) ||
+            yes(raw.is_serial) ||
+            yes(card.is_serial) ||
+            yes(card.isSerial) ||
+            Number(raw.season || card.season || 0) > 0 ||
+            Number(card.number_of_seasons || card.seasons_count || 0) > 0 ||
+            Number(card.number_of_episodes || card.episodes_count || 0) > 0 ||
+            !!(card.first_air_date ||
+                card.last_air_date ||
+                card.last_episode_to_air ||
+                card.next_episode_to_air) ||
+            !!(card.episode_run_time && card.episode_run_time.length) ||
+            !!(card.seasons && card.seasons.some(function (season) {
+                return Number(season.season_number || season.number || 0) > 0;
+            })) ||
+            !!(card.original_name && !card.original_title);
+    }
+
+    function updateCardButton(event, raw, buttonState) {
+        var button = ensureButton(event);
+        if (!button || !button.length) return;
+        button.off('.translationsubCardFlow');
+        button.attr('data-translationsub-card-flow', '1');
+        renderButton(button, buttonState || {
+            subscribed: button.hasClass('translationsub-full-button--subscribed')
+        });
+        if (voiceRequest && voiceRequest.view === viewToken) {
+            voiceRequest.button = button;
+            setVoiceLoading(button, true);
+        }
+        try {
+            if (window.TranslationSubUi && typeof window.TranslationSubUi.refresh === 'function')
+                window.TranslationSubUi.refresh();
+        } catch (e) {}
+        button.on('hover:enter.translationsubCardFlow', function () {
+            openForItem(raw, button);
+        });
+        button.on('hover:long.translationsubCardFlow', function () {
+            try {
+                if (window.TranslationSub && typeof window.TranslationSub.openSubscriptions === 'function')
+                    window.TranslationSub.openSubscriptions();
+            } catch (e) {}
+        });
+    }
+
+    // -------------------------------------------------------------------------
+    // Синхронизация кнопки с API и экраном
+    // -------------------------------------------------------------------------
+
+    function applyButton(event, token) {
+        if (typeof $ !== 'function' || token !== viewToken) return;
         var payload = event && (event.data || event.object) || {};
         var raw = transportPayload(payload);
 
+        // Не ждём сети: подходящая карточка сразу получает кнопку.
+        // Если сервер вернёт eligible=false, кнопку уберём.
+        if (serialCardHint(raw)) updateCardButton(event, raw);
+
+        var client = api();
+        if (!client || typeof client.contentSummary !== 'function') return;
         client.contentSummary(raw, function (state) {
             if (token !== viewToken || !activeFull()) return;
             state = state && typeof state === 'object' ? state : {};
-
             if (!state.eligible) {
                 removeButton(event);
                 return;
             }
-
-            var button = ensureButton(event);
-            if (!button || !button.length) return;
-            button.off('.translationsubCardFlow');
-            button.attr('data-translationsub-card-flow', '1');
-            renderButton(button, state.button);
-            try {
-                if (window.TranslationSubUi && typeof window.TranslationSubUi.refresh === 'function')
-                    window.TranslationSubUi.refresh();
-            } catch (e) {}
-            button.on('hover:enter.translationsubCardFlow', function () { openForItem(raw); });
-            button.on('hover:long.translationsubCardFlow', function () {
-                try {
-                    if (window.TranslationSub && typeof window.TranslationSub.openSubscriptions === 'function')
-                        window.TranslationSub.openSubscriptions();
-                } catch (e) {}
-            });
+            updateCardButton(event, raw, state.button);
         }, function () {
-            if (token === viewToken) removeButton(event);
+            // Сетевой сбой не скрывает кнопку, которая уже доступна.
         });
     }
 
@@ -319,20 +509,30 @@
         }, typeof delay === 'number' ? delay : 80);
     }
 
+    // -------------------------------------------------------------------------
+    // Подписка на события Lampa и запуск
+    // -------------------------------------------------------------------------
+
     function bind() {
         if (!Lampa.Listener || typeof Lampa.Listener.follow !== 'function') return;
         Lampa.Listener.follow('full', function (event) {
             if (!event || event.type !== 'complite') return;
+            if (voiceRequest) finishVoiceRequest(voiceRequest);
             viewToken++;
             dialogToken++;
-            scheduleApply(event, 80);
+            lastEvent = event;
+            clearTimeout(applyTimer);
+            applyButton(event, viewToken);
         });
     }
 
     function start() {
+        injectLoadingStyle();
         bind();
         window.TranslationSubCardFlow = {
-            refreshButton: function () { scheduleApply(lastEvent, 0); }
+            refreshButton: function () {
+                scheduleApply(lastEvent, 0);
+            }
         };
     }
 
