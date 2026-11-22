@@ -35,7 +35,7 @@
         }, 0);
     }
 
-    function openUpdate(item, previousController, directEnabled) {
+    function openUpdate(item, previousController, directEnabled, focusedNotice) {
         var closed = false;
 
         function closeOnce(restorePreviousController) {
@@ -75,7 +75,18 @@
             if (directEnabled && source && typeof source.openNoticeOnline === 'function') {
                 if (source.openNoticeOnline(item, {
                     beforeNavigate: function () { closeOnce(false); },
-                    onFailure: openSeriesCard
+                    onFailure: openSeriesCard,
+                    onCancel: function () {
+                        if (closed) return;
+                        try {
+                            var modal = Lampa.Modal;
+                            if (!modal || typeof modal.toggle !== 'function') return;
+                            if (typeof modal.opened === 'function' && !modal.opened()) return;
+                            // Restore the notice window's Back handler and
+                            // focus the same item after leaving the balancers.
+                            modal.toggle(focusedNotice);
+                        } catch (e) {}
+                    }
                 })) return;
             }
         } catch (e) {
@@ -169,7 +180,7 @@
                     var node = $(selected);
                     var index = parseInt(node.attr('data-translationsub-update'), 10);
                     if (isNaN(index) || !updates[index]) return;
-                    openUpdate(updates[index], previousController, directEnabled);
+                    openUpdate(updates[index], previousController, directEnabled, node[0]);
                 },
                 onBack: function () { closeAndRestore(previousController); }
             });
