@@ -296,9 +296,13 @@
                             hooks.onFailure();
                         else openCard(item);
                     }
+                },
+                onBack: function () {
+                    // Restore the notification drawer if Lampa leaves Select's
+                    // controller active after Back/Escape.
+                    if (hooks && typeof hooks.onCancel === 'function')
+                        hooks.onCancel();
                 }
-                // No onBack handler: Lampa's window stack returns to the
-                // original focused notification when the remote presses Back.
             });
             return true;
         } catch (e) {
