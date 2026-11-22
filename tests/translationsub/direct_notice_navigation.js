@@ -131,7 +131,8 @@ const activeOther = { ...stale, latestEpisode: 3 };
     assert.equal(selections.length, 1);
     assert.equal(selections[0].items.length, 2);
     assert.equal(steps.length, 0, 'keep modal open while remote selector is displayed');
-    assert.equal(selections[0].onBack, undefined, 'let Lampa restore the original modal and its focus');
+    assert.equal(typeof selections[0].onBack, 'function',
+        'balancer Back explicitly restores the original modal and its focus');
     selections[0].onSelect(selections[0].items[1]);
     assert.equal(activities.length, 2);
     assert.equal(activities[0].component, 'full');
@@ -197,7 +198,9 @@ function makeNoticeClient() {
     const dom = {
         modal: null,
         closes: 0,
-        restored: 0
+        restored: 0,
+        modalOpen: false,
+        modalFocusRestorations: []
     };
 
     class Node {
@@ -238,8 +241,10 @@ function makeNoticeClient() {
         get(name) { return new Node(name === 'notice_card'); }
     };
     test.client.Lampa.Modal = {
-        open(options) { dom.modal = options; },
-        close() { dom.closes++; }
+        open(options) { dom.modal = options; dom.modalOpen = true; },
+        close() { dom.closes++; dom.modalOpen = false; },
+        opened() { return dom.modalOpen; },
+        toggle(target) { dom.modalFocusRestorations.push(target); }
     };
     vm.runInContext(notice, test.context, { filename: 'translationsub-notice.js' });
     assert.equal(typeof test.client.TranslationSubNotice.open, 'function');
@@ -256,8 +261,8 @@ function makeNoticeClient() {
     assert.equal(selections.length, 1, 'open a real Lampa Select menu');
     assert.equal(dom.closes, 0, 'keep notice drawer open behind the selector');
     assert.equal(activities.length, 0);
-    assert.equal(selections[0].onBack, undefined,
-        'remote Back is handled by the Lampa selector window stack');
+    assert.equal(typeof selections[0].onBack, 'function',
+        'remote Back must recover the notification controller after Select closes');
 
     // Lampa itself hides its selector before onSelect runs.
     selections[0].onSelect(selections[0].items[0]);
@@ -268,6 +273,23 @@ function makeNoticeClient() {
     assert.equal(activities[0].component, 'full');
     assert.equal(activities[1].lampac_custom_select, 'collaps');
     console.log('PASS: remote OK opens selection; Back leaves drawer/focus intact');
+}
+
+{
+    const { client, activities, selections, dom } = makeNoticeClient();
+    client.TranslationSubNotice.open([item([active, activeOther])], true);
+    const firstNotice = dom.modal.select;
+    dom.modal.onSelect(firstNotice);
+    assert.equal(selections.length, 1, 'multiple balancers open a chooser');
+    selections[0].onBack();
+    assert.deepEqual(dom.modalFocusRestorations, [firstNotice],
+        'Back from balancers restores focus to the same notification');
+    assert.equal(dom.closes, 0, 'cancel must leave the notification drawer open');
+    assert.equal(activities.length, 0, 'cancel must not launch Online');
+    dom.modal.onBack();
+    assert.equal(dom.closes, 1, 'the following Back closes the drawer');
+    assert.equal(dom.restored, 1, 'the following Back restores the original controller');
+    console.log('PASS: balancer Back -> notice Back closes normally, without launching Online');
 }
 
 {
